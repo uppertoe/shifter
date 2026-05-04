@@ -1,0 +1,122 @@
+{% extends "base.html" %}
+{% block title %}Schedule — shifter{% endblock %}
+
+{% block content %}
+<header class="page-head">
+  <h1>Schedule</h1>
+</header>
+
+<section>
+  <h3>Calendar</h3>
+
+  <article class="schedule-controls">
+    <p class="muted"><small>Pick a nanny and default times, then click empty days to add an expected shift. Click an existing chip to cancel or restore it.</small></p>
+    <div class="schedule-picker">
+      <div class="picker-row">
+        <span class="picker-label">Adding for</span>
+        <div class="nanny-swatches">
+          {% for n in nannies %}
+            <a href="/schedule?nanny_id={{ n.id }}{% if month_start %}&month={{ month_start.strftime('%Y-%m') }}{% endif %}"
+               class="nanny-swatch {% if selected_nanny and selected_nanny.id == n.id %}active{% endif %}"
+               style="--chip-bg: {{ nanny_color(n.id) }};">
+              <span class="dot"></span>{{ n.name }}
+            </a>
+          {% endfor %}
+        </div>
+      </div>
+      <div class="picker-row">
+        <label class="picker-time">Start <input type="time" value="{{ default_start }}" id="default-start"></label>
+        <label class="picker-time">End   <input type="time" value="{{ default_end }}"   id="default-end"></label>
+      </div>
+    </div>
+    <input type="hidden" id="selected-nanny-id" value="{{ selected_nanny.id if selected_nanny else '' }}">
+  </article>
+
+  <nav class="month-nav">
+    <a role="button" class="secondary outline" href="/schedule?month={{ prev_month_str }}">← {{ prev_month_str }}</a>
+    <strong>{{ month_label }}</strong>
+    <a role="button" class="secondary outline" href="/schedule?month={{ next_month_str }}">{{ next_month_str }} →</a>
+  </nav>
+
+  <table class="calendar">
+    <thead>
+      <tr>{% for n in dow_names %}<th>{{ n }}</th>{% endfor %}</tr>
+    </thead>
+    <tbody>
+      {% for week in weeks %}
+        <tr>
+          {% for day in week %}
+            <td id="day-{{ day.isoformat() }}" class="day-cell {% if day.month != month_start.month %}out-of-month{% endif %} {% if day == today %}today{% endif %}">
+              {% with slots = by_date.get(day, []), in_month = (day.month == month_start.month) %}
+                {% include "schedule/_day_cell.html" %}
+              {% endwith %}
+            </td>
+          {% endfor %}
+        </tr>
+      {% endfor %}
+    </tbody>
+  </table>
+</section>
+
+<section>
+  <h3>Recurring patterns</h3>
+
+  {% if patterns %}
+  <figure>
+  <table>
+    <thead><tr><th>Nanny</th><th>Day</th><th>Times</th><th>From</th><th>Until</th><th></th></tr></thead>
+    <tbody>
+      {% for p in patterns %}
+        <tr>
+          <td>{{ p.nanny_name }}</td>
+          <td>{{ dow_names[p.day_of_week] }}</td>
+          <td>{{ p.start_time }}–{{ p.end_time }}</td>
+          <td>{{ p.active_from }}</td>
+          <td>{{ p.active_until or '—' }}</td>
+          <td>
+            <details class="confirm">
+              <summary class="confirm-trigger">Delete</summary>
+              <form method="post" action="/schedule/patterns/{{ p.id }}/delete">
+                <button type="submit" class="contrast">Confirm delete</button>
+                <small class="muted">Cancelled and past rows are kept.</small>
+              </form>
+            </details>
+          </td>
+        </tr>
+      {% endfor %}
+    </tbody>
+  </table>
+  </figure>
+  {% else %}
+    <p><small>No recurring patterns yet.</small></p>
+  {% endif %}
+
+  <details>
+    <summary>Add a recurring pattern</summary>
+    <form method="post" action="/schedule/patterns">
+      <div class="grid">
+        <label>Nanny
+          <select name="nanny_id" required>
+            {% for n in nannies %}<option value="{{ n.id }}">{{ n.name }}</option>{% endfor %}
+          </select>
+        </label>
+        <label>Day of week
+          <select name="day_of_week" required>
+            {% for n in dow_names %}<option value="{{ loop.index0 }}">{{ n }}</option>{% endfor %}
+          </select>
+        </label>
+      </div>
+      <div class="grid">
+        <label>Start <input type="time" name="start_time" value="07:00" required></label>
+        <label>End   <input type="time" name="end_time"   value="18:00" required></label>
+      </div>
+      <div class="grid">
+        <label>Active from   <input type="date" name="active_from"  value="{{ today.isoformat() }}" required></label>
+        <label>Active until  <input type="date" name="active_until" placeholder="(open-ended)"></label>
+      </div>
+      <label>Notes <input name="notes" placeholder="optional"></label>
+      <button type="submit">Add pattern</button>
+    </form>
+  </details>
+</section>
+{% endblock %}

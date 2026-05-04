@@ -1,0 +1,36 @@
+{# Context: shift_id, expenses, expenses_total_cents #}
+{% if expenses %}
+<table>
+  <thead><tr><th>Description</th><th>Amount</th><th>Status</th><th></th></tr></thead>
+  <tbody>
+    {% for e in expenses %}
+      <tr {% if e.pending_review %}class="row-pending"{% endif %}>
+        <td>{{ e.description }}</td>
+        <td>{{ format_cents(e.amount_cents) }}</td>
+        <td>
+          {% if e.pending_review %}<small class="pill pending">review</small>{% endif %}
+          {% if e.paid_on %}<small class="pill paid">paid {{ e.paid_on }}</small>
+          {% else %}<small class="pill unpaid">unpaid</small>{% endif %}
+        </td>
+        <td>
+          <details class="confirm">
+            <summary class="confirm-trigger">Remove</summary>
+            <form hx-post="/shifts/{{ shift_id }}/expenses/{{ e.id }}/delete"
+                  hx-target="#expenses-block"
+                  hx-swap="innerHTML">
+              <button type="submit" class="contrast">Confirm remove</button>
+            </form>
+          </details>
+        </td>
+      </tr>
+    {% endfor %}
+    <tr>
+      <th>Total</th>
+      <th>{{ format_cents(expenses_total_cents) }}</th>
+      <th></th><th></th>
+    </tr>
+  </tbody>
+</table>
+{% else %}
+  <p><small>No expenses on this shift.</small></p>
+{% endif %}

@@ -1,0 +1,130 @@
+{% extends "base.html" %}
+{% block title %}Unpaid — {{ nanny.name }}{% endblock %}
+
+{% block content %}
+<header class="page-head">
+  <h1>Owed to {{ nanny.name }}</h1>
+  <a href="/" role="button" class="secondary outline">← Dashboard</a>
+</header>
+
+{% if summary.grand_total_cents == 0 %}
+  <article>
+    <p>All paid up. ✓</p>
+  </article>
+{% else %}
+
+<section>
+  <h3>Unpaid shifts ({{ summary.shifts|length }})</h3>
+  {% if summary.shifts %}
+    <figure>
+    <table>
+      <thead><tr><th>Date</th><th>Times</th><th>Hours</th><th>Pay</th></tr></thead>
+      <tbody>
+        {% for s in summary.shifts %}
+          <tr>
+            <td>{{ format_date(s.start.isoformat(), tz) }}</td>
+            <td><small>
+              {{ format_dt(s.start.isoformat(), tz).split(', ')[1] }} –
+              {{ format_dt(s.end.isoformat(), tz).split(', ')[1] if s.end else 'open' }}
+            </small></td>
+            <td>{{ "%.2f"|format(s.hours|float) }}h</td>
+            <td>{{ format_cents(s.pay_cents) }}</td>
+          </tr>
+        {% endfor %}
+        <tr>
+          <th colspan="3" style="text-align:right">Subtotal</th>
+          <th>{{ format_cents(summary.shifts_subtotal_cents) }}</th>
+        </tr>
+      </tbody>
+    </table>
+    </figure>
+  {% else %}
+    <p><small>None.</small></p>
+  {% endif %}
+</section>
+
+<section>
+  <h3>Unpaid expenses ({{ summary.expenses|length }})</h3>
+  {% if summary.expenses %}
+    <figure>
+    <table>
+      <thead><tr><th>Shift date</th><th>Description</th><th>Amount</th></tr></thead>
+      <tbody>
+        {% for e in summary.expenses %}
+          <tr>
+            <td>{{ format_date(e.shift_start.isoformat(), tz) }}</td>
+            <td>
+              {{ e.description }}
+              {% if e.pending_review %}<small class="pill pending">review</small>{% endif %}
+            </td>
+            <td>{{ format_cents(e.amount_cents) }}</td>
+          </tr>
+        {% endfor %}
+        <tr>
+          <th colspan="2" style="text-align:right">Subtotal</th>
+          <th>{{ format_cents(summary.expenses_subtotal_cents) }}</th>
+        </tr>
+      </tbody>
+    </figure>
+  {% else %}
+    <p><small>None.</small></p>
+  {% endif %}
+</section>
+
+<article class="grand-total">
+  <header>
+    <strong>Grand total</strong>
+    <span class="big">{{ format_cents(summary.grand_total_cents) }}</span>
+  </header>
+
+  <div class="copy-block">
+    <p class="copy-label"><small class="muted">Tap to copy:</small></p>
+    <button type="button" class="copy-chip" data-copy="{{ '%.2f' % (summary.grand_total_cents / 100) }}">
+      <span class="copy-key">Amount</span>
+      <span class="copy-val">${{ '%.2f' % (summary.grand_total_cents / 100) }}</span>
+    </button>
+    <button type="button" class="copy-chip" data-copy="{{ nanny.name }} {{ today_iso }}">
+      <span class="copy-key">Reference</span>
+      <span class="copy-val">{{ nanny.name }} {{ today_iso }}</span>
+    </button>
+    {% if nanny.payment_notes %}
+      {% for line in nanny.payment_notes.splitlines() %}
+        {% set t = line.strip() %}
+        {% if t %}
+          <button type="button" class="copy-chip" data-copy="{{ t.split(':', 1)[1].strip() if ':' in t else t }}">
+            {% if ':' in t %}
+              <span class="copy-key">{{ t.split(':', 1)[0].strip() }}</span>
+              <span class="copy-val">{{ t.split(':', 1)[1].strip() }}</span>
+            {% else %}
+              <span class="copy-val">{{ t }}</span>
+            {% endif %}
+          </button>
+        {% endif %}
+      {% endfor %}
+    {% else %}
+      <p><small class="muted">No payment template set for {{ nanny.name }}. <a href="/nannies">Add one</a> on the nannies page (under Payment details).</small></p>
+    {% endif %}
+  </div>
+
+
+  <form method="post" action="/nannies/{{ nanny.id }}/pay-all">
+    <fieldset role="group">
+      <input type="date" name="paid_on" value="{{ today_iso }}" required>
+      <input name="paid_note" placeholder="Note (optional, e.g. 'cash')">
+    </fieldset>
+    <details class="confirm">
+      <summary class="confirm-trigger">Mark all paid</summary>
+      <p>
+        <small>
+          {{ summary.shifts|length }} shift{{ '' if summary.shifts|length == 1 else 's' }}
+          and {{ summary.expenses|length }} expense{{ '' if summary.expenses|length == 1 else 's' }}
+          totalling <strong>{{ format_cents(summary.grand_total_cents) }}</strong>.
+        </small>
+      </p>
+      <button type="submit">Yes, mark paid</button>
+    </details>
+  </form>
+</article>
+
+{% endif %}
+{% endblock %}

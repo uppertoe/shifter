@@ -1,0 +1,22 @@
+services:
+  shifter:
+    # In production, pull the prebuilt multi-arch image from GHCR (CI publishes
+    # latest + semver tags). For local dev or one-off builds, comment out
+    # `image:` and uncomment `build: .` instead.
+    image: ghcr.io/uppertoe/shifter:latest
+    # build: .
+    container_name: shifter
+    restart: unless-stopped
+    environment:
+      TZ: Australia/Melbourne
+      ALLOWED_USERS: ${ALLOWED_USERS:-}
+      API_KEY: ${API_KEY:?set API_KEY in .env}
+      SCREENSHOT_RETENTION_DAYS: 90
+      FY_START_MONTH: 7
+      HA_DEBOUNCE_MINUTES: 15
+    volumes:
+      # Container runs as uid=1000. If your host user is uid 1000 too (typical
+      # first user on Linux), nothing to do. Otherwise: `chown -R 1000:1000 ./data`.
+      - ./data:/data
+    ports:
+      - "127.0.0.1:8000:8000"  # bind to localhost; expose via reverse proxy + Authelia

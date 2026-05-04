@@ -1,0 +1,295 @@
+/* App-specific overrides on top of Pico. Keep this file small. */
+
+.topbar {
+  border-bottom: 1px solid var(--pico-muted-border-color);
+  padding-block: 0.25rem;
+  margin-bottom: 1rem;
+}
+.topbar nav { padding: 0; }
+/* Indicate the active page with color + an underline. Don't change font-weight,
+   because bold characters are wider and would reflow the surrounding nav items. */
+.topbar nav a.active {
+  color: var(--pico-color);
+  text-decoration: underline;
+  text-decoration-thickness: 2px;
+  text-underline-offset: 6px;
+  text-decoration-color: var(--pico-primary);
+}
+.topbar .brand { text-decoration: none; }
+.topbar .user { color: var(--pico-muted-color); }
+
+/* Single-row page header. Fixed min-height so swapping pages doesn't reflow
+   vertically — every page's <h1> sits at the same baseline regardless of
+   whether it has action buttons on the right. */
+.page-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 1rem;
+  margin: 0 0 1.25rem;
+  padding: 0;
+  background: none;
+  border: none;
+  min-height: 3rem;
+}
+.page-head h1 { margin: 0; line-height: 1.2; }
+.page-head a[role="button"], .page-head button { margin: 0; }
+
+.nanny.inactive { opacity: 0.55; }
+
+.nanny-head {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 1rem;
+  flex-wrap: wrap;
+  margin-bottom: 0;
+}
+.nanny-head hgroup { margin-bottom: 0; }
+.nanny-head hgroup h3 { margin-bottom: 0.1rem; }
+.nanny-head hgroup p { margin-bottom: 0; }
+
+.nanny-actions { flex-shrink: 0; }
+.nanny-actions form { display: inline; margin: 0; }
+.nanny-actions button { margin: 0; }
+
+/* Tighten Pico's defaults inside dense forms (rate-history add, rename). */
+.nanny details form { margin-block-start: 0.75rem; }
+.nanny details form button { margin-bottom: 0; }
+.nanny details table { margin-block: 0.5rem; }
+.nanny > details {
+  margin-top: 1rem;
+  padding-top: 1rem;
+  border-top: 1px solid var(--pico-muted-border-color);
+}
+.nanny > details > summary { padding-block: 0.25rem; }
+
+/* "fieldset role=group" gives us segmented inline form (input + button). */
+
+/* shifts list */
+.filter-bar { margin-bottom: 1rem; }
+.filter-bar fieldset { margin-bottom: 0; }
+.filter-bar .open-toggle { display: inline-flex; align-items: center; gap: 0.5rem; margin-left: 0.5rem; }
+.filter-bar .open-toggle input { margin: 0; }
+
+.row-pending td:first-child { border-left: 3px solid var(--pico-primary); }
+
+.pill {
+  display: inline-block;
+  padding: 0.05rem 0.45rem;
+  border-radius: 999px;
+  font-size: 0.7rem;
+  margin-right: 0.25rem;
+  background: var(--pico-secondary-background);
+  color: var(--pico-secondary-inverse);
+}
+.pill.paid    { background: #2e7d32; color: #fff; }
+.pill.unpaid  { background: #b88200; color: #fff; }
+.pill.pending { background: #1565c0; color: #fff; }
+.pill.open    { background: #6d4c41; color: #fff; }
+
+/* shift edit form */
+form .grid { gap: 0.75rem; }
+form textarea { font: inherit; padding: 0.4rem 0.6rem; border-radius: 6px; }
+.error { background: var(--pico-form-element-invalid-border-color); color: var(--pico-contrast-inverse); }
+small.muted { color: var(--pico-muted-color); font-weight: normal; }
+
+/* dashboard */
+.stat { text-align: center; padding: 1rem; margin-bottom: 0; }
+.stat h3 { margin: 0.25rem 0; font-size: 1.75rem; }
+.stat p { margin: 0; color: var(--pico-muted-color); }
+
+.shift-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 1rem;
+  padding: 0.75rem 1rem;
+  margin-bottom: 0.5rem;
+  flex-wrap: wrap;
+}
+.shift-row > div { display: flex; flex-direction: column; min-width: 8rem; }
+
+.owed { padding: 1.25rem 1.5rem; margin-bottom: 0; }
+.owed header { padding: 0; margin: 0 0 0.75rem; background: none; border: none; }
+.owed p { margin: 0 0 0.75rem; }
+.owed .big { font-size: 1.5rem; font-weight: 600; }
+.owed a[role="button"] { margin: 0; width: 100%; }
+
+.grand-total { padding: 1.25rem; }
+.grand-total header { display: flex; justify-content: space-between; align-items: center; padding: 0; margin-bottom: 1rem; background: none; border: none; }
+.grand-total .big { font-size: 1.6rem; font-weight: 600; }
+.grand-total fieldset { margin-bottom: 0; }
+
+.banner-warn {
+  display: flex; align-items: center; justify-content: space-between; gap: 1rem;
+  background: #fff8e1; border: 1px solid #f0c651; color: #6d4c00;
+  padding: 0.85rem 1.25rem;
+}
+.banner-warn a[role="button"] { margin: 0; }
+@media (prefers-color-scheme: dark) {
+  .banner-warn { background: #3b2e0c; border-color: #8b6913; color: #fde7a3; }
+}
+
+.empty-state { padding: 1.5rem; }
+.empty-state h3 { margin-top: 0; }
+.empty-state ol { margin-bottom: 0.5rem; }
+.empty-state li { margin-bottom: 0.25rem; }
+
+/* Copy-to-clipboard chips on the unpaid (Mark Paid) view */
+.copy-block { margin: 1rem 0; display: flex; flex-wrap: wrap; gap: 0.5rem; align-items: center; }
+.copy-block .copy-label { width: 100%; margin: 0 0 0.25rem; }
+
+button.copy-chip {
+  display: inline-flex; align-items: baseline; gap: 0.5rem;
+  padding: 0.4rem 0.75rem; margin: 0;
+  background: var(--pico-secondary-background);
+  color: var(--pico-color);
+  border: 1px solid var(--pico-muted-border-color);
+  border-radius: 6px;
+  font: inherit; font-size: 0.875rem;
+  cursor: pointer;
+}
+button.copy-chip:hover { background: var(--pico-card-background-color); border-color: var(--pico-primary); }
+button.copy-chip.copied { background: #2e7d32; color: #fff; border-color: #2e7d32; }
+button.copy-chip .copy-key { color: var(--pico-muted-color); font-size: 0.75rem; text-transform: uppercase; letter-spacing: 0.05em; }
+button.copy-chip.copied .copy-key { color: rgba(255,255,255,0.85); }
+button.copy-chip .copy-val { font-weight: 500; font-variant-numeric: tabular-nums; }
+
+/* inline confirm pattern: click summary to reveal the destructive action.
+   <details><summary class="confirm-trigger">…</summary><form>…</form></details> */
+details.confirm { display: inline-block; margin: 0; }
+details.confirm summary {
+  list-style: none;
+  cursor: pointer;
+  display: inline-block;
+  padding: var(--pico-form-element-spacing-vertical) var(--pico-form-element-spacing-horizontal);
+  border-radius: var(--pico-border-radius);
+  background: var(--pico-secondary-background);
+  color: var(--pico-secondary-inverse);
+  border: 1px solid var(--pico-secondary-border);
+  font-weight: 500;
+  line-height: 1;
+}
+details.confirm summary::-webkit-details-marker { display: none; }
+details.confirm summary::marker { content: ""; }
+details.confirm summary:hover { filter: brightness(0.95); }
+details.confirm[open] summary { background: var(--pico-muted-border-color); }
+details.confirm > form,
+details.confirm > p {
+  display: block;
+  margin: 0.5rem 0 0;
+}
+details.confirm form button { margin-bottom: 0; }
+details.confirm small { display: block; margin-top: 0.25rem; }
+
+.form-actions { display: flex; gap: 0.5rem; align-items: center; flex-wrap: wrap; margin-top: 1rem; }
+
+/* schedule calendar */
+.schedule-controls { padding: 1rem 1.25rem; margin-bottom: 1rem; }
+.schedule-controls form { margin-bottom: 0; }
+.schedule-picker { display: flex; flex-direction: column; gap: 0.75rem; }
+.picker-row { display: flex; align-items: center; gap: 1rem; flex-wrap: wrap; }
+.picker-label { color: var(--pico-muted-color); font-size: 0.875rem; }
+.nanny-swatches { display: flex; gap: 0.5rem; flex-wrap: wrap; }
+
+/* Inactive = outlined ghost in the nanny's color. Active = solid fill, white
+   text. Mirrors the chip vs chip-add visual language used in the calendar so
+   "what's selected" reads as "the same color you'll see on the calendar". */
+.nanny-swatch {
+  display: inline-flex; align-items: center; gap: 0.55rem;
+  padding: 0.45rem 0.95rem;
+  border-radius: 999px;
+  border: 1.5px solid var(--chip-bg);
+  background: transparent;
+  color: var(--pico-color);
+  text-decoration: none;
+  font-size: 0.9rem;
+  font-weight: 500;
+  cursor: pointer;
+}
+.nanny-swatch .dot {
+  display: inline-block;
+  width: 0.7rem; height: 0.7rem;
+  border-radius: 50%;
+  background: var(--chip-bg);
+  flex-shrink: 0;
+}
+.nanny-swatch:hover {
+  background: color-mix(in srgb, var(--chip-bg) 12%, transparent);
+}
+/* Reserve the checkmark slot in *both* states so the pill keeps a fixed
+   width when (de)selected — only its visibility toggles. */
+.nanny-swatch::after {
+  content: "✓";
+  font-weight: 700;
+  margin-left: 0.15rem;
+  visibility: hidden;
+}
+.nanny-swatch.active {
+  background: var(--chip-bg);
+  color: #fff;
+  box-shadow: 0 1px 3px color-mix(in srgb, var(--chip-bg) 40%, transparent);
+}
+.nanny-swatch.active .dot { background: #fff; }
+.nanny-swatch.active::after { visibility: visible; opacity: 0.9; }
+.picker-time { display: flex; align-items: center; gap: 0.4rem; font-size: 0.875rem; color: var(--pico-muted-color); }
+.picker-time input { margin: 0; }
+
+.month-nav { display: flex; align-items: center; justify-content: space-between; gap: 1rem; margin-bottom: 0.5rem; }
+.month-nav strong { font-size: 1.1rem; }
+.month-nav a[role="button"] { margin: 0; }
+
+table.calendar { table-layout: fixed; width: 100%; }
+table.calendar th { text-align: center; padding: 0.4rem 0; font-weight: 500; color: var(--pico-muted-color); border-bottom: 1px solid var(--pico-muted-border-color); }
+table.calendar td { vertical-align: top; padding: 0.35rem; height: 5.5rem; border: 1px solid var(--pico-muted-border-color); background: var(--pico-card-background-color); }
+table.calendar td.out-of-month { background: transparent; opacity: 0.45; }
+table.calendar td.today { box-shadow: inset 0 0 0 2px var(--pico-primary); }
+.day-num { font-size: 0.8rem; color: var(--pico-muted-color); margin-bottom: 0.2rem; }
+.day-slots { display: flex; flex-direction: column; gap: 0.15rem; align-items: stretch; }
+.day-slots form { margin: 0; display: block; }
+
+button.chip {
+  width: 100%;
+  font-size: 0.7rem;
+  padding: 0.15rem 0.35rem;
+  margin: 0;
+  background: var(--chip-bg, var(--pico-primary-background));
+  color: #fff;
+  border: 1px solid var(--chip-bg, var(--pico-primary-border));
+  border-radius: 4px;
+  text-align: left;
+  line-height: 1.2;
+  cursor: pointer;
+}
+button.chip.cancelled { background: var(--pico-muted-border-color); color: var(--pico-muted-color); text-decoration: line-through; border-color: var(--pico-muted-border-color); }
+button.chip:hover { filter: brightness(0.9); }
+button.chip small { display: inline; opacity: 0.9; margin-left: 0.25rem; }
+
+/* "+" placeholder. Idle state shows just "+" in the selected nanny's color.
+   On hover, expands to show the nanny name + start time so you know what's
+   about to be placed. */
+button.chip-add {
+  width: 100%;
+  font-size: 0.7rem;
+  padding: 0.15rem 0.35rem;
+  margin: 0;
+  background: transparent;
+  color: var(--chip-bg, var(--pico-muted-color));
+  border: 1px dashed var(--chip-bg, var(--pico-muted-border-color));
+  border-radius: 4px;
+  text-align: center;
+  line-height: 1.2;
+  cursor: pointer;
+}
+button.chip-add:hover {
+  background: var(--chip-bg, var(--pico-primary));
+  color: #fff;
+  border-style: solid;
+  text-align: left;
+}
+button.chip-add .chip-default { font-weight: 600; }
+button.chip-add .chip-hover   { display: none; }
+button.chip-add:hover .chip-default { display: none; }
+button.chip-add:hover .chip-hover   { display: inline; }
+button.chip-add small { opacity: 0.9; margin-left: 0.25rem; }

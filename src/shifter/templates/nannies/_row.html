@@ -1,0 +1,83 @@
+{# Standalone HTMX swap target. Context: nanny, current_rate, rates. #}
+<article class="nanny {% if not nanny.active %}inactive{% endif %}" id="nanny-{{ nanny.id }}">
+  <header class="nanny-head">
+    <hgroup>
+      <h3>{{ nanny.name }}</h3>
+      <p>
+        {% if current_rate %}{{ format_cents_per_hour(current_rate.rate_cents) }}{% else %}<em>no rate set</em>{% endif %}
+        {% if not nanny.active %}<small>· inactive</small>{% endif %}
+      </p>
+    </hgroup>
+    <div class="nanny-actions" role="group">
+      <button class="secondary outline"
+              onclick="this.closest('.nanny').querySelector('.rename-form').toggleAttribute('hidden')">
+        Rename
+      </button>
+      <form hx-post="/nannies/{{ nanny.id }}/active"
+            hx-target="#nanny-{{ nanny.id }}"
+            hx-swap="outerHTML">
+        <input type="hidden" name="active" value="{{ 0 if nanny.active else 1 }}">
+        <button type="submit" class="secondary outline">
+          {{ 'Deactivate' if nanny.active else 'Reactivate' }}
+        </button>
+      </form>
+    </div>
+  </header>
+
+  <form class="rename-form" hidden
+        hx-post="/nannies/{{ nanny.id }}/rename"
+        hx-target="#nanny-{{ nanny.id }}"
+        hx-swap="outerHTML">
+    <fieldset role="group">
+      <input name="name" value="{{ nanny.name }}" required>
+      <button type="submit">Save</button>
+    </fieldset>
+  </form>
+
+  <details>
+    <summary>Payment details</summary>
+    <p><small class="muted">Free text — each non-empty line becomes a one-tap copy chip when paying. Examples: <code>PayID: anita@example.com</code>, <code>BSB: 062-000</code>, <code>Account: 12345678</code>.</small></p>
+    <form hx-post="/nannies/{{ nanny.id }}/payment"
+          hx-target="#nanny-{{ nanny.id }}"
+          hx-swap="outerHTML">
+      <textarea name="payment_notes" rows="4" placeholder="(none set)">{{ nanny.payment_notes or '' }}</textarea>
+      <button type="submit">Save</button>
+    </form>
+  </details>
+
+  <details>
+    <summary>Pay rate history ({{ rates|length }})</summary>
+    <table>
+      <thead><tr><th>From</th><th>Rate</th><th></th></tr></thead>
+      <tbody>
+        {% for r in rates %}
+          <tr>
+            <td>{{ r.effective_from }}</td>
+            <td>{{ format_cents_per_hour(r.rate_cents) }}</td>
+            <td>
+              <details class="confirm">
+                <summary class="confirm-trigger">Delete</summary>
+                <form hx-post="/nannies/{{ nanny.id }}/rates/{{ r.id }}/delete"
+                      hx-target="#nanny-{{ nanny.id }}"
+                      hx-swap="outerHTML">
+                  <button type="submit" class="contrast">Confirm delete</button>
+                  <small class="muted">Past shifts will recompute.</small>
+                </form>
+              </details>
+            </td>
+          </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+    <form hx-post="/nannies/{{ nanny.id }}/rates"
+          hx-target="#nanny-{{ nanny.id }}"
+          hx-swap="outerHTML"
+          hx-on::after-request="if(event.detail.successful) this.reset()">
+      <div class="grid">
+        <label>New rate <input name="rate" inputmode="decimal" placeholder="40.00" required></label>
+        <label>From <input name="effective_from" type="date" required></label>
+      </div>
+      <button type="submit">Add</button>
+    </form>
+  </details>
+</article>

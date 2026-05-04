@@ -1,0 +1,20 @@
+# Keep the build context minimal: no virtualenv, no local data, no caches.
+.venv/
+.git/
+.github/
+data/
+*.db
+*.db-*
+*.db-journal
+__pycache__/
+*.pyc
+.pytest_cache/
+.ruff_cache/
+.mypy_cache/
+.DS_Store
+.env
+.env.local
+tests/
+docs/
+README.md
+*.log

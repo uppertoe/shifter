@@ -1,0 +1,35 @@
+{% extends "base.html" %}
+{% block title %}Nannies — shifter{% endblock %}
+
+{% block content %}
+<header class="page-head">
+  <h1>Nannies</h1>
+  <button onclick="document.getElementById('new-form').toggleAttribute('hidden')">
+    Add nanny
+  </button>
+</header>
+
+<article id="new-form" hidden>
+  <form hx-post="/nannies"
+        hx-target="#nanny-list"
+        hx-swap="beforeend"
+        hx-on::after-request="if(event.detail.successful){this.reset(); this.closest('article').setAttribute('hidden','')}">
+    <div class="grid">
+      <label>Name <input name="name" required autocomplete="off"></label>
+      <label>Hourly rate <input name="rate" inputmode="decimal" placeholder="38.00" required></label>
+      <label>Effective from <input name="effective_from" type="date" value="{{ today }}" required></label>
+    </div>
+    <button type="submit">Save</button>
+  </form>
+</article>
+
+<div id="nanny-list">
+  {% for ctx in rows %}
+    {% with nanny=ctx.nanny, current_rate=ctx.current_rate, rates=ctx.rates %}
+      {% include "nannies/_row.html" %}
+    {% endwith %}
+  {% else %}
+    <p><small>No nannies yet. Click "Add nanny" to get started.</small></p>
+  {% endfor %}
+</div>
+{% endblock %}

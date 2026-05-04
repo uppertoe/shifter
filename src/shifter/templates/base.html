@@ -1,0 +1,50 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>{% block title %}shifter{% endblock %}</title>
+  <link rel="stylesheet" href="/static/pico.min.css">
+  <link rel="stylesheet" href="/static/styles.css">
+  <script src="https://unpkg.com/htmx.org@2.0.3" defer></script>
+  <script>
+    // Copy-to-clipboard for chips marked with [data-copy]. Brief inline feedback,
+    // no toast library, no external deps.
+    document.addEventListener("click", function (e) {
+      var btn = e.target.closest("[data-copy]");
+      if (!btn) return;
+      var text = btn.getAttribute("data-copy");
+      navigator.clipboard.writeText(text).then(function () {
+        var orig = btn.getAttribute("data-orig-label") || btn.innerHTML;
+        if (!btn.getAttribute("data-orig-label")) btn.setAttribute("data-orig-label", orig);
+        btn.classList.add("copied");
+        btn.innerHTML = '<span class="copy-val">Copied “' + text + '”</span>';
+        setTimeout(function () {
+          btn.classList.remove("copied");
+          btn.innerHTML = orig;
+        }, 1100);
+      });
+    });
+  </script>
+</head>
+<body>
+  <header class="container topbar">
+    <nav>
+      <ul>
+        <li><a href="/" class="brand"><strong>shifter</strong></a></li>
+      </ul>
+      {% set p = request.url.path %}
+      <ul>
+        <li><a href="/shifts"   {% if p.startswith('/shifts')   %}class="active" aria-current="page"{% endif %}>Shifts</a></li>
+        <li><a href="/schedule" {% if p.startswith('/schedule') %}class="active" aria-current="page"{% endif %}>Schedule</a></li>
+        <li><a href="/nannies"  {% if p.startswith('/nannies')  %}class="active" aria-current="page"{% endif %}>Nannies</a></li>
+        <li><a href="/reports"  {% if p.startswith('/reports')  %}class="active" aria-current="page"{% endif %}>Reports</a></li>
+      </ul>
+      <ul>
+        <li><small class="user">{{ user }}</small></li>
+      </ul>
+    </nav>
+  </header>
+  <main class="container">{% block content %}{% endblock %}</main>
+</body>
+</html>

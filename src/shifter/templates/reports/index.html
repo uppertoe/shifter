@@ -1,0 +1,83 @@
+{% extends "base.html" %}
+{% block title %}Reports — shifter{% endblock %}
+
+{% block content %}
+<header class="page-head">
+  <h1>Reports</h1>
+  <small class="muted">{{ period_label }}</small>
+</header>
+
+<form method="get" action="/reports" class="filter-bar">
+  <fieldset role="group">
+    <select name="preset" onchange="this.form.submit()">
+      <option value="this_fy" {% if preset == 'this_fy' %}selected{% endif %}>This FY</option>
+      <option value="last_fy" {% if preset == 'last_fy' %}selected{% endif %}>Last FY</option>
+      <option value="this_cy" {% if preset == 'this_cy' %}selected{% endif %}>This calendar year</option>
+      <option value="last_30" {% if preset == 'last_30' %}selected{% endif %}>Last 30 days</option>
+      <option value="custom"  {% if preset == 'custom'  %}selected{% endif %}>Custom range</option>
+    </select>
+    <select name="nanny_id" onchange="this.form.submit()">
+      <option value="">All nannies</option>
+      {% for n in nannies %}
+        <option value="{{ n.id }}" {% if filter_nanny_id == n.id %}selected{% endif %}>{{ n.name }}</option>
+      {% endfor %}
+    </select>
+  </fieldset>
+  {% if preset == 'custom' %}
+  <fieldset role="group">
+    <input type="date" name="date_from" value="{{ date_from }}">
+    <input type="date" name="date_to"   value="{{ date_to }}">
+    <button type="submit">Apply</button>
+  </fieldset>
+  {% endif %}
+</form>
+
+{% if totals %}
+<figure>
+<table>
+  <thead>
+    <tr>
+      <th>Nanny</th>
+      <th>Shifts</th>
+      <th>Hours</th>
+      <th>Gross pay</th>
+      <th>Expenses</th>
+      <th>Paid</th>
+      <th>Owing</th>
+    </tr>
+  </thead>
+  <tbody>
+    {% for t in totals %}
+      <tr>
+        <td><strong>{{ t.nanny_name }}</strong></td>
+        <td>{{ t.shift_count }}</td>
+        <td>{{ "%.1f"|format(t.hours|float) }}h</td>
+        <td>{{ format_cents(t.gross_pay_cents) }}</td>
+        <td>{{ format_cents(t.expenses_total_cents) }}</td>
+        <td>{{ format_cents(t.total_paid_cents) }}</td>
+        <td><strong>{{ format_cents(t.owing_cents) }}</strong></td>
+      </tr>
+    {% endfor %}
+    <tr>
+      <th>Total</th>
+      <th>{{ grand.shift_count }}</th>
+      <th>{{ "%.1f"|format(grand.hours) }}h</th>
+      <th>{{ format_cents(grand.gross_pay_cents) }}</th>
+      <th>{{ format_cents(grand.expenses_total_cents) }}</th>
+      <th>{{ format_cents(grand.total_paid_cents) }}</th>
+      <th>{{ format_cents(grand.owing_cents) }}</th>
+    </tr>
+  </tbody>
+</table>
+</figure>
+
+<p>
+  <a href="/reports/shifts.csv?preset={{ preset }}{% if filter_nanny_id %}&nanny_id={{ filter_nanny_id }}{% endif %}{% if preset == 'custom' %}&date_from={{ date_from }}&date_to={{ date_to }}{% endif %}"
+     role="button" class="secondary outline">Download shifts CSV</a>
+  <a href="/reports/expenses.csv?preset={{ preset }}{% if filter_nanny_id %}&nanny_id={{ filter_nanny_id }}{% endif %}{% if preset == 'custom' %}&date_from={{ date_from }}&date_to={{ date_to }}{% endif %}"
+     role="button" class="secondary outline">Download expenses CSV</a>
+</p>
+{% else %}
+  <p><small>No shifts in this period.</small></p>
+{% endif %}
+{% endblock %}

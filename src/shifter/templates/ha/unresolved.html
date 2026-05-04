@@ -1,0 +1,35 @@
+{% extends "base.html" %}
+{% block title %}Unresolved HA events — shifter{% endblock %}
+
+{% block content %}
+<header class="page-head">
+  <h1>Unresolved HA events</h1>
+  <small class="muted">{{ events|length }} pending</small>
+</header>
+
+{% if not events %}
+  <p><small>Nothing waiting. Home Assistant either hasn't sent anything ambiguous, or you've attributed them all.</small></p>
+{% else %}
+  {% for e in events %}
+  <article>
+    <header style="background:none; padding:0; margin-bottom:0.5rem;">
+      <strong>{{ format_dt(e.occurred_at, tz) }}</strong>
+      <small class="muted">— from {{ e.source or 'unknown source' }}</small>
+    </header>
+    <p><small class="muted">{{ e.resolution_note or '' }}</small></p>
+    <form method="post" action="/api/events/{{ e.id }}/attribute">
+      <fieldset role="group">
+        <select name="nanny_id" required>
+          {% for n in nannies %}<option value="{{ n.id }}">{{ n.name }}</option>{% endfor %}
+        </select>
+        <select name="direction" required>
+          <option value="arrival">Arrival (open shift)</option>
+          <option value="departure">Departure (close open shift)</option>
+        </select>
+        <button type="submit">Attribute</button>
+      </fieldset>
+    </form>
+  </article>
+  {% endfor %}
+{% endif %}
+{% endblock %}

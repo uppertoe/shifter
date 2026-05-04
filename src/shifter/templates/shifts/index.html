@@ -1,0 +1,77 @@
+{% extends "base.html" %}
+{% block title %}Shifts — shifter{% endblock %}
+
+{% block content %}
+<header class="page-head">
+  <h1>Shifts</h1>
+  <a href="/shifts/new" role="button">New shift</a>
+</header>
+
+<form method="get" action="/shifts" class="filter-bar">
+  <fieldset role="group">
+    <select name="nanny_id" onchange="this.form.submit()">
+      <option value="">All nannies</option>
+      {% for n in nannies %}
+        <option value="{{ n.id }}" {% if filter_nanny_id == n.id %}selected{% endif %}>{{ n.name }}</option>
+      {% endfor %}
+    </select>
+    <select name="paid" onchange="this.form.submit()">
+      <option value="">Paid &amp; unpaid</option>
+      <option value="no"  {% if filter_paid == 'no'  %}selected{% endif %}>Unpaid only</option>
+      <option value="yes" {% if filter_paid == 'yes' %}selected{% endif %}>Paid only</option>
+    </select>
+    <label class="open-toggle">
+      <input type="checkbox" name="open_only" value="1" {% if filter_open %}checked{% endif %} onchange="this.form.submit()">
+      Open only
+    </label>
+  </fieldset>
+</form>
+
+{% if shifts %}
+<figure>
+<table>
+  <thead>
+    <tr>
+      <th>Date</th>
+      <th>Nanny</th>
+      <th>Times</th>
+      <th>Hours</th>
+      <th>Pay</th>
+      <th>Expenses</th>
+      <th>Status</th>
+      <th></th>
+    </tr>
+  </thead>
+  <tbody>
+    {% for v in shifts %}
+      {% set s = v.shift %}
+      <tr {% if not s.confirmed %}class="row-pending"{% endif %}>
+        <td>{{ format_date(s.start_time, tz) }}</td>
+        <td>{{ v.nanny.name if v.nanny else '?' }}</td>
+        <td>
+          <small>
+            {{ format_dt(s.start_time, tz).split(', ')[1] if s.start_time else '' }}
+            – {{ format_dt(s.end_time, tz).split(', ')[1] if s.end_time else 'open' }}
+          </small>
+        </td>
+        <td>{{ format_duration(s.start_time, s.end_time) }}</td>
+        <td>{{ format_cents(v.computed.pay_cents) }}</td>
+        <td>{% if v.expenses_total_cents %}{{ format_cents(v.expenses_total_cents) }}{% else %}—{% endif %}</td>
+        <td>
+          {% if not s.confirmed %}<small class="pill pending">pending</small>{% endif %}
+          {% if s.paid_on %}<small class="pill paid">paid {{ s.paid_on }}</small>
+          {% else %}<small class="pill unpaid">unpaid</small>{% endif %}
+          {% if not s.end_time %}<small class="pill open">open</small>{% endif %}
+        </td>
+        <td>
+          <a href="/shifts/{{ s.id }}/edit" role="button" class="secondary outline">Edit</a>
+        </td>
+      </tr>
+    {% endfor %}
+  </tbody>
+</table>
+</figure>
+{% else %}
+  <p><small>No shifts match these filters.</small></p>
+{% endif %}
+{% endblock %}

@@ -1,0 +1,119 @@
+{% extends "base.html" %}
+{% block title %}Dashboard — shifter{% endblock %}
+
+{% block content %}
+<header class="page-head">
+  <h1>Today, {{ format_date(today_iso ~ 'T00:00:00+10:00', tz) }}</h1>
+  <a href="/shifts/new" role="button">New shift</a>
+</header>
+
+<div class="grid">
+  <article class="stat">
+    <small class="muted">Today</small>
+    <h3>{{ "%.1f"|format(today_hours) }}h</h3>
+    <p>{{ format_cents(today_pay_cents) }}</p>
+  </article>
+  <article class="stat">
+    <small class="muted">This week (since {{ week_start }})</small>
+    <h3>{{ "%.1f"|format(week_hours) }}h</h3>
+    <p>{{ format_cents(week_pay_cents) }}</p>
+  </article>
+</div>
+
+{% if open_shifts %}
+<section>
+  <h2>Open shifts</h2>
+  {% for v in open_shifts %}
+    <article class="shift-row">
+      <div>
+        <strong>{{ v.nanny.name }}</strong>
+        <small class="muted">started {{ format_dt(v.shift.start_time, tz) }}</small>
+      </div>
+      <div>
+        <strong>{{ format_duration(v.shift.start_time, v.shift.end_time) }}</strong>
+        <small class="muted">≈ {{ format_cents(v.computed.pay_cents) }}</small>
+      </div>
+      <form method="post" action="/shifts/{{ v.shift.id }}/close" style="margin:0">
+        <button type="submit">Close now</button>
+      </form>
+    </article>
+  {% endfor %}
+</section>
+{% endif %}
+
+{% if unresolved_count %}
+<section>
+  <article class="banner-warn">
+    <strong>{{ unresolved_count }} unresolved Home Assistant event{{ '' if unresolved_count == 1 else 's' }}</strong>
+    needs manual attribution.
+    <a href="/api/events/unresolved" role="button" class="secondary">Review</a>
+  </article>
+</section>
+{% endif %}
+
+{% if pending_shifts %}
+<section>
+  <h2>Pending review <small class="muted">(from Home Assistant)</small></h2>
+  {% for v in pending_shifts %}
+    <article class="shift-row">
+      <div>
+        <strong>{{ v.nanny.name }}</strong>
+        <small class="muted">{{ format_dt(v.shift.start_time, tz) }} – {{ format_dt(v.shift.end_time, tz) if v.shift.end_time else 'open' }}</small>
+      </div>
+      <div>
+        <strong>{{ format_duration(v.shift.start_time, v.shift.end_time) }}</strong>
+        <small class="muted">{{ format_cents(v.computed.pay_cents) }}</small>
+      </div>
+      <div role="group">
+        <form method="post" action="/shifts/{{ v.shift.id }}/confirm" style="display:inline; margin:0">
+          <button type="submit">Confirm</button>
+        </form>
+        <a href="/shifts/{{ v.shift.id }}/edit" role="button" class="secondary outline">Edit</a>
+      </div>
+    </article>
+  {% endfor %}
+</section>
+{% endif %}
+
+<section>
+  <h2>Owed</h2>
+  {% if not nanny_summaries %}
+    <article class="empty-state">
+      <h3>Welcome to shifter 👋</h3>
+      <p>Get started in two steps:</p>
+      <ol>
+        <li><a href="/nannies">Add your nanny</a> with their hourly rate.</li>
+        <li><a href="/schedule">Set their usual days</a> on the calendar (or skip and just log shifts manually).</li>
+      </ol>
+      <p><small class="muted">If you have a TimeTagger export, the README has the import command.</small></p>
+    </article>
+  {% else %}
+    <div class="grid">
+      {% for entry in nanny_summaries %}
+        {% set s = entry.summary %}
+        <article class="owed">
+          <header>
+            <strong>{{ entry.nanny.name }}</strong>
+          </header>
+          {% if s.grand_total_cents == 0 %}
+            <p><small class="muted">All paid up.</small></p>
+          {% else %}
+            <p>
+              <span class="big">{{ format_cents(s.grand_total_cents) }}</span><br>
+              <small class="muted">
+                {{ s.shifts|length }} shift{{ '' if s.shifts|length == 1 else 's' }}
+                ({{ format_cents(s.shifts_subtotal_cents) }})
+                {% if s.expenses %}
+                  + {{ s.expenses|length }} expense{{ '' if s.expenses|length == 1 else 's' }}
+                  ({{ format_cents(s.expenses_subtotal_cents) }})
+                {% endif %}
+              </small>
+            </p>
+            <a href="/nannies/{{ entry.nanny.id }}/unpaid" role="button">View &amp; pay</a>
+          {% endif %}
+        </article>
+      {% endfor %}
+    </div>
+  {% endif %}
+</section>
+{% endblock %}

@@ -1,0 +1,78 @@
+{% extends "base.html" %}
+{% block title %}{{ 'Edit shift' if shift else 'New shift' }} — shifter{% endblock %}
+
+{% block content %}
+<header class="page-head">
+  <h1>{% if shift %}Edit shift #{{ shift.id }}{% else %}New shift{% endif %}</h1>
+  <a href="/shifts" role="button" class="secondary outline">Back</a>
+</header>
+
+{% if error %}<article class="error"><strong>Couldn't save:</strong> {{ error }}</article>{% endif %}
+
+<form method="post" action="{% if shift %}/shifts/{{ shift.id }}{% else %}/shifts{% endif %}">
+  <div class="grid">
+    <label>Nanny
+      <select name="nanny_id" required>
+        {% for n in nannies %}
+          <option value="{{ n.id }}" {% if shift and shift.nanny_id == n.id %}selected{% endif %}>{{ n.name }}</option>
+        {% endfor %}
+      </select>
+    </label>
+  </div>
+
+  <div class="grid">
+    <label>Start
+      <input type="datetime-local" name="start_local" value="{{ start_local }}" required>
+    </label>
+    <label>End <small class="muted">(leave blank if shift is still open)</small>
+      <input type="datetime-local" name="end_local" value="{{ end_local }}">
+    </label>
+  </div>
+
+  <div class="grid">
+    <label>Hourly rate override <small class="muted">(blank = use schedule)</small>
+      <input name="rate_override" inputmode="decimal" placeholder="e.g. 40.00"
+             value="{% if shift and shift.rate_override_cents is not none %}{{ '%.2f' % (shift.rate_override_cents / 100) }}{% endif %}">
+    </label>
+    <label>Flat rate <small class="muted">(blank = compute by hours)</small>
+      <input name="flat_rate" inputmode="decimal" placeholder="e.g. 200.00"
+             value="{% if shift and shift.flat_rate_cents is not none %}{{ '%.2f' % (shift.flat_rate_cents / 100) }}{% endif %}">
+    </label>
+  </div>
+
+  <label>Notes
+    <textarea name="notes" rows="2" placeholder="optional">{{ shift.notes if shift else '' }}</textarea>
+  </label>
+
+  <div class="form-actions">
+    <button type="submit">Save</button>
+    {% if shift %}
+      <details class="confirm">
+        <summary class="confirm-trigger secondary outline">Delete shift</summary>
+        <form method="post" action="/shifts/{{ shift.id }}/delete">
+          <button type="submit" class="contrast">Confirm delete</button>
+        </form>
+      </details>
+    {% endif %}
+  </div>
+</form>
+
+{% if shift %}
+  <hr>
+  <h3>Expenses</h3>
+  <div id="expenses-block">
+    {% include "shifts/_expenses.html" %}
+  </div>
+
+  <form hx-post="/shifts/{{ shift.id }}/expenses"
+        hx-target="#expenses-block"
+        hx-swap="innerHTML"
+        hx-on::after-request="if(event.detail.successful) this.reset()">
+    <fieldset role="group">
+      <input name="description" placeholder="Description (e.g. lunch)" required>
+      <input name="amount" inputmode="decimal" placeholder="$0.00" required>
+      <button type="submit">Add expense</button>
+    </fieldset>
+  </form>
+{% endif %}
+{% endblock %}

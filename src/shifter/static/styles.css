@@ -94,6 +94,12 @@ form textarea { font: inherit; padding: 0.4rem 0.6rem; border-radius: 6px; }
 .error { background: var(--pico-form-element-invalid-border-color); color: var(--pico-contrast-inverse); }
 small.muted { color: var(--pico-muted-color); font-weight: normal; }
 
+/* Vertical breathing room between stacked sections. Pico styles the contents
+   but leaves <section> itself with zero margin, so when the preceding article
+   has margin-bottom: 0 the next h2 collides with it. */
+main > section { margin-block-start: 1.5rem; }
+main > section:first-child { margin-block-start: 0; }
+
 /* dashboard */
 .stat { text-align: center; padding: 1rem; margin-bottom: 0; }
 .stat h3 { margin: 0.25rem 0; font-size: 1.75rem; }

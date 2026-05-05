@@ -25,7 +25,8 @@
   <h2>Open shifts</h2>
   {% for v in open_shifts %}
     {% set day_iso = v.computed.start.date().isoformat() %}
-    <article class="pending-shift" style="--chip-bg: {{ nanny_color(v.nanny.id) }};">
+    {% set row_id = "open-shift-" ~ v.shift.id %}
+    <article id="{{ row_id }}" class="pending-shift" style="--chip-bg: {{ nanny_color(v.nanny.id) }};">
       <div class="pending-meta">
         <strong class="nanny-chip">{{ v.nanny.name }}</strong>
         <small class="muted">started {{ format_dt(v.shift.start_time, tz) }}</small>
@@ -41,10 +42,24 @@
         {% endif %}
       </div>
       <div class="pending-actions">
-        <form method="post" action="/shifts/{{ v.shift.id }}/close" style="display:inline; margin:0">
-          <button type="submit">Close now</button>
-        </form>
-        <a href="/shifts/{{ v.shift.id }}/edit" role="button" class="secondary outline">Edit</a>
+        <details class="confirm">
+          <summary class="confirm-trigger">Close</summary>
+          <form method="post"
+                action="/shifts/{{ v.shift.id }}/close"
+                hx-post="/shifts/{{ v.shift.id }}/close"
+                hx-target="#{{ row_id }}"
+                hx-swap="outerHTML">
+            <label>End time
+              <input type="datetime-local" name="end_time"
+                     value="{{ now_local_input }}" required>
+            </label>
+            <button type="submit">Close shift</button>
+          </form>
+        </details>
+        <button type="button" class="secondary outline"
+                hx-get="/shifts/{{ v.shift.id }}/inline-editor?row_id={{ row_id }}&confirm_on_save=0"
+                hx-target="#{{ row_id }}"
+                hx-swap="outerHTML">Edit</button>
         {% if frigate_base_url %}
           <a href="{{ frigate_base_url }}/review?date={{ day_iso }}"
              target="_blank" rel="noopener"
@@ -71,7 +86,8 @@
   <h2>Pending review <small class="muted">(from Home Assistant)</small></h2>
   {% for v in pending_shifts %}
     {% set day_iso = v.computed.start.date().isoformat() %}
-    <article class="pending-shift" style="--chip-bg: {{ nanny_color(v.nanny.id) }};">
+    {% set row_id = "pending-shift-" ~ v.shift.id %}
+    <article id="{{ row_id }}" class="pending-shift" style="--chip-bg: {{ nanny_color(v.nanny.id) }};">
       <div class="pending-meta">
         <strong class="nanny-chip">{{ v.nanny.name }}</strong>
         <small class="muted">{{ format_dt(v.shift.start_time, tz) }} – {{ format_dt(v.shift.end_time, tz) if v.shift.end_time else 'open' }}</small>
@@ -95,9 +111,12 @@
       <div class="pending-actions">
         <button type="button"
                 hx-post="/shifts/{{ v.shift.id }}/confirm"
-                hx-target="closest .pending-shift"
+                hx-target="#{{ row_id }}"
                 hx-swap="outerHTML">Confirm</button>
-        <a href="/shifts/{{ v.shift.id }}/edit" role="button" class="secondary outline">Edit</a>
+        <button type="button" class="secondary outline"
+                hx-get="/shifts/{{ v.shift.id }}/inline-editor?row_id={{ row_id }}&confirm_on_save=1"
+                hx-target="#{{ row_id }}"
+                hx-swap="outerHTML">Edit</button>
         {% if frigate_base_url %}
           <a href="{{ frigate_base_url }}/review?date={{ day_iso }}"
              target="_blank" rel="noopener"

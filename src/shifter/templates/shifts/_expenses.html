@@ -1,4 +1,6 @@
-{# Context: shift_id, expenses, expenses_total_cents #}
+{# Context: shift_id, expenses, expenses_total_cents.
+   Convention: caller wraps this in <div id="expenses-block-{shift_id}">. #}
+{% set _exp_target = "#expenses-block-" ~ shift_id %}
 {% if expenses %}
 <table>
   <thead><tr><th>Description</th><th>Amount</th><th>Status</th><th></th></tr></thead>
@@ -16,7 +18,7 @@
           <details class="confirm">
             <summary class="confirm-trigger">Remove</summary>
             <form hx-post="/shifts/{{ shift_id }}/expenses/{{ e.id }}/delete"
-                  hx-target="#expenses-block"
+                  hx-target="{{ _exp_target }}"
                   hx-swap="innerHTML">
               <button type="submit" class="contrast">Confirm remove</button>
             </form>

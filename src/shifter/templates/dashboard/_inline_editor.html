@@ -1,0 +1,49 @@
+{# Inline editor for a single shift, used on the dashboard.
+   Context: shift, start_local, end_local, expenses, expenses_total_cents,
+            confirm_on_save (bool — adds confirmed=1 + button label tweak),
+            row_id (the outer <article id> we should swap on save).
+   Wrapped in an <article> so it cleanly outerHTML-swaps the card it replaces.
+#}
+<article id="{{ row_id }}" class="pending-shift inline-editing">
+  <header class="inline-editor-head">
+    <strong>Edit shift {{ shift.id }}</strong>
+  </header>
+  <form hx-post="/shifts/{{ shift.id }}/inline-save"
+        hx-target="#{{ row_id }}"
+        hx-swap="outerHTML">
+    <input type="hidden" name="confirm" value="{{ '1' if confirm_on_save else '0' }}">
+    <div class="grid">
+      <label>Start
+        <input type="datetime-local" name="start_local" value="{{ start_local }}" required>
+      </label>
+      <label>End <small class="muted">(blank = leave open)</small>
+        <input type="datetime-local" name="end_local" value="{{ end_local }}">
+      </label>
+    </div>
+    <label>Notes
+      <textarea name="notes" rows="2" placeholder="optional">{{ shift.notes or '' }}</textarea>
+    </label>
+    <div class="form-actions">
+      <button type="submit">
+        {% if confirm_on_save %}Save &amp; confirm{% else %}Save{% endif %}
+      </button>
+      <small class="muted">Refresh page to discard changes</small>
+    </div>
+  </form>
+
+  <hr>
+  <h4>Expenses</h4>
+  <div id="expenses-block-{{ shift.id }}">
+    {% include "shifts/_expenses.html" %}
+  </div>
+  <form hx-post="/shifts/{{ shift.id }}/expenses"
+        hx-target="#expenses-block-{{ shift.id }}"
+        hx-swap="innerHTML"
+        hx-on::after-request="if(event.detail.successful) this.reset()">
+    <fieldset role="group">
+      <input name="description" placeholder="Description (e.g. lunch)" required>
+      <input name="amount" inputmode="decimal" placeholder="$0.00" required>
+      <button type="submit">Add expense</button>
+    </fieldset>
+  </form>
+</article>

@@ -60,12 +60,12 @@
 {% if shift %}
   <hr>
   <h3>Expenses</h3>
-  <div id="expenses-block">
+  <div id="expenses-block-{{ shift.id }}">
     {% include "shifts/_expenses.html" %}
   </div>
 
   <form hx-post="/shifts/{{ shift.id }}/expenses"
-        hx-target="#expenses-block"
+        hx-target="#expenses-block-{{ shift.id }}"
         hx-swap="innerHTML"
         hx-on::after-request="if(event.detail.successful) this.reset()">
     <fieldset role="group">

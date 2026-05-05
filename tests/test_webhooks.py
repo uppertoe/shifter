@@ -247,6 +247,139 @@ def test_shifts_list_filter_confirmed_no(client, conn):
     assert f"/shifts/{confirmed_id}/edit" not in r.text
 
 
+def test_inline_editor_renders_with_expenses(client, conn):
+    nid = conn.execute("INSERT INTO nannies (name) VALUES ('A')").lastrowid
+    sid = conn.execute(
+        "INSERT INTO shifts (nanny_id, start_time, end_time, source, confirmed,"
+        " created_by, updated_by) VALUES (?, '2026-05-04T07:00:00+10:00',"
+        " '2026-05-04T18:00:00+10:00', 'ha', 0, 'x', 'x')", (nid,),
+    ).lastrowid
+    conn.execute(
+        "INSERT INTO expenses (shift_id, amount_cents, description)"
+        " VALUES (?, 1450, 'Lunch')", (sid,),
+    )
+    r = client.get(
+        f"/shifts/{sid}/inline-editor?row_id=pending-shift-{sid}&confirm_on_save=1",
+        headers={"Remote-User": "alice"},
+    )
+    assert r.status_code == 200
+    body = r.text
+    assert f'id="pending-shift-{sid}"' in body
+    assert "inline-editing" in body
+    assert "Save &amp; confirm" in body
+    assert "Lunch" in body  # existing expense rendered
+    assert f'id="expenses-block-{sid}"' in body  # per-shift target
+
+
+def test_inline_save_with_confirm(client, conn):
+    nid = conn.execute("INSERT INTO nannies (name) VALUES ('A')").lastrowid
+    sid = conn.execute(
+        "INSERT INTO shifts (nanny_id, start_time, end_time, source, confirmed,"
+        " created_by, updated_by) VALUES (?, '2026-05-04T07:00:00+10:00',"
+        " '2026-05-04T18:00:00+10:00', 'ha', 0, 'x', 'x')", (nid,),
+    ).lastrowid
+    r = client.post(
+        f"/shifts/{sid}/inline-save",
+        data={
+            "start_local": "2026-05-04T07:30",
+            "end_local": "2026-05-04T17:45",
+            "notes": "Adjusted by hand",
+            "confirm": "1",
+        },
+        headers={"HX-Request": "true", "Remote-User": "alice"},
+    )
+    assert r.status_code == 200
+    assert r.text == ""
+    row = conn.execute(
+        "SELECT start_time, end_time, notes, confirmed FROM shifts WHERE id = ?", (sid,),
+    ).fetchone()
+    assert row["start_time"].startswith("2026-05-04T07:30:00")
+    assert row["end_time"].startswith("2026-05-04T17:45:00")
+    assert row["notes"] == "Adjusted by hand"
+    assert row["confirmed"] == 1
+
+
+def test_inline_save_without_confirm_keeps_unconfirmed(client, conn):
+    nid = conn.execute("INSERT INTO nannies (name) VALUES ('A')").lastrowid
+    sid = conn.execute(
+        "INSERT INTO shifts (nanny_id, start_time, source, confirmed,"
+        " created_by, updated_by) VALUES (?, '2026-05-04T07:00:00+10:00',"
+        " 'ha', 0, 'x', 'x')", (nid,),
+    ).lastrowid
+    r = client.post(
+        f"/shifts/{sid}/inline-save",
+        data={"start_local": "2026-05-04T07:15", "end_local": "", "notes": "",
+              "confirm": "0"},
+        headers={"HX-Request": "true", "Remote-User": "alice"},
+    )
+    assert r.status_code == 200
+    row = conn.execute("SELECT confirmed, end_time FROM shifts WHERE id = ?", (sid,)).fetchone()
+    assert row["confirmed"] == 0
+    assert row["end_time"] is None
+
+
+def test_inline_save_rejects_end_before_start(client, conn):
+    nid = conn.execute("INSERT INTO nannies (name) VALUES ('A')").lastrowid
+    sid = conn.execute(
+        "INSERT INTO shifts (nanny_id, start_time, source, confirmed,"
+        " created_by, updated_by) VALUES (?, '2026-05-04T07:00:00+10:00',"
+        " 'ha', 0, 'x', 'x')", (nid,),
+    ).lastrowid
+    r = client.post(
+        f"/shifts/{sid}/inline-save",
+        data={"start_local": "2026-05-04T10:00", "end_local": "2026-05-04T09:00",
+              "notes": "", "confirm": "0"},
+        headers={"Remote-User": "alice"},
+    )
+    assert r.status_code == 400
+
+
+def test_close_with_explicit_end_time(client, conn):
+    nid = conn.execute("INSERT INTO nannies (name) VALUES ('A')").lastrowid
+    sid = conn.execute(
+        "INSERT INTO shifts (nanny_id, start_time, source, confirmed,"
+        " created_by, updated_by) VALUES (?, '2026-05-04T07:00:00+10:00',"
+        " 'manual', 1, 'x', 'x')", (nid,),
+    ).lastrowid
+    r = client.post(f"/shifts/{sid}/close",
+                     data={"end_time": "2026-05-04T17:30"},
+                     headers={"HX-Request": "true", "Remote-User": "alice"})
+    assert r.status_code == 200
+    assert r.text == ""
+    end = conn.execute("SELECT end_time FROM shifts WHERE id = ?", (sid,)).fetchone()["end_time"]
+    assert end.startswith("2026-05-04T17:30:00")
+
+
+def test_close_rejects_end_before_start(client, conn):
+    nid = conn.execute("INSERT INTO nannies (name) VALUES ('A')").lastrowid
+    sid = conn.execute(
+        "INSERT INTO shifts (nanny_id, start_time, source, confirmed,"
+        " created_by, updated_by) VALUES (?, '2026-05-04T10:00:00+10:00',"
+        " 'manual', 1, 'x', 'x')", (nid,),
+    ).lastrowid
+    r = client.post(f"/shifts/{sid}/close",
+                     data={"end_time": "2026-05-04T09:00"},
+                     headers={"Remote-User": "alice"})
+    assert r.status_code == 400
+    end = conn.execute("SELECT end_time FROM shifts WHERE id = ?", (sid,)).fetchone()["end_time"]
+    assert end is None
+
+
+def test_close_without_end_time_uses_now(client, conn):
+    nid = conn.execute("INSERT INTO nannies (name) VALUES ('A')").lastrowid
+    # Start the shift in the recent past so any 'now' is a valid end time.
+    sid = conn.execute(
+        "INSERT INTO shifts (nanny_id, start_time, source, confirmed,"
+        " created_by, updated_by) VALUES (?, '2020-01-01T00:00:00+10:00',"
+        " 'manual', 1, 'x', 'x')", (nid,),
+    ).lastrowid
+    r = client.post(f"/shifts/{sid}/close",
+                     headers={"HX-Request": "true", "Remote-User": "alice"})
+    assert r.status_code == 200
+    end = conn.execute("SELECT end_time FROM shifts WHERE id = ?", (sid,)).fetchone()["end_time"]
+    assert end is not None
+
+
 def test_confirm_with_htmx_returns_empty_body(client, conn):
     nid = conn.execute("INSERT INTO nannies (name) VALUES ('A')").lastrowid
     sid = conn.execute(

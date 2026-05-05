@@ -105,6 +105,7 @@ def index(
             "week_hours": week_hours,
             "week_pay_cents": week_pay,
             "open_shifts": open_views,
+            "now_local_input": now.strftime("%Y-%m-%dT%H:%M"),
             "pending_shifts": pending_views,
             "pending_older_count": pending_older_count,
             "frigate_base_url": settings.frigate_base_url,

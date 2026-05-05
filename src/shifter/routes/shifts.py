@@ -240,13 +240,100 @@ def delete(
 def close(
     shift_id: int,
     request: Request,
+    end_time: str | None = Form(default=None),
     conn=Depends(get_db),
     settings: Settings = Depends(get_settings),
     user: str = Depends(current_user),
 ):
-    now_iso = datetime.now(settings.zoneinfo).isoformat()
-    repos.close_shift(conn, shift_id, now_iso, updated_by=user)
+    if end_time:
+        end_dt = parse_local_input(end_time, settings.zoneinfo)
+    else:
+        end_dt = datetime.now(settings.zoneinfo)
+    shift = repos.get_shift(conn, shift_id)
+    if shift is None:
+        raise HTTPException(status.HTTP_404_NOT_FOUND, "no such shift")
+    start_dt = datetime.fromisoformat(shift["start_time"])
+    if end_dt <= start_dt:
+        raise HTTPException(status.HTTP_400_BAD_REQUEST,
+                              "end time must be after start time")
+    repos.close_shift(conn, shift_id, end_dt.isoformat(), updated_by=user)
+    if request.headers.get("HX-Request"):
+        return HTMLResponse("")
     return RedirectResponse("/shifts", status_code=status.HTTP_303_SEE_OTHER)
+
+
+# --- inline editor (used by dashboard cards) --------------------------------
+
+@router.get("/{shift_id}/inline-editor", response_class=HTMLResponse)
+def inline_editor(
+    shift_id: int,
+    request: Request,
+    row_id: str,
+    confirm_on_save: int = 0,
+    conn=Depends(get_db),
+    settings: Settings = Depends(get_settings),
+    user: str = Depends(current_user),
+):
+    shift = repos.get_shift(conn, shift_id)
+    if shift is None:
+        raise HTTPException(status.HTTP_404_NOT_FOUND)
+    expenses = repos.list_expenses(conn, shift_id)
+    expenses_total = sum(int(e["amount_cents"]) for e in expenses)
+    start_local = to_local_input(shift["start_time"], settings.zoneinfo)
+    end_local = to_local_input(shift["end_time"], settings.zoneinfo) if shift["end_time"] else ""
+    return templates.TemplateResponse(
+        request,
+        "dashboard/_inline_editor.html",
+        {
+            "user": user,
+            "shift": shift,
+            "start_local": start_local,
+            "end_local": end_local,
+            "expenses": expenses,
+            "expenses_total_cents": expenses_total,
+            "confirm_on_save": bool(confirm_on_save),
+            "row_id": row_id,
+        },
+    )
+
+
+@router.post("/{shift_id}/inline-save", response_class=HTMLResponse)
+def inline_save(
+    shift_id: int,
+    request: Request,
+    start_local: str = Form(...),
+    end_local: str = Form(""),
+    notes: str = Form(""),
+    confirm: str = Form("0"),
+    conn=Depends(get_db),
+    settings: Settings = Depends(get_settings),
+    user: str = Depends(current_user),
+):
+    shift = repos.get_shift(conn, shift_id)
+    if shift is None:
+        raise HTTPException(status.HTTP_404_NOT_FOUND)
+    try:
+        start_dt = parse_local_input(start_local, settings.zoneinfo)
+        end_dt = parse_local_input(end_local, settings.zoneinfo) if end_local.strip() else None
+        if end_dt and end_dt <= start_dt:
+            raise ValueError("end time must be after start time")
+    except ValueError as e:
+        raise HTTPException(status.HTTP_400_BAD_REQUEST, str(e))
+    repos.update_shift(
+        conn, shift_id,
+        nanny_id=shift["nanny_id"],
+        start_time=start_dt.isoformat(),
+        end_time=end_dt.isoformat() if end_dt else None,
+        rate_override_cents=shift["rate_override_cents"],
+        flat_rate_cents=shift["flat_rate_cents"],
+        notes=_none_if_blank(notes),
+        updated_by=user,
+    )
+    if confirm == "1":
+        repos.confirm_shift(conn, shift_id, updated_by=user)
+    if request.headers.get("HX-Request"):
+        return HTMLResponse("")
+    return RedirectResponse("/", status_code=status.HTTP_303_SEE_OTHER)
 
 
 @router.post("/{shift_id}/confirm", response_class=HTMLResponse)

@@ -93,6 +93,7 @@
 .pill.unpaid  { background: #b88200; color: #fff; }
 .pill.pending { background: #1565c0; color: #fff; }
 .pill.open    { background: #6d4c41; color: #fff; }
+.pill.stale   { background: #b88200; color: #fff; }
 
 /* shift edit form */
 form .grid { gap: 0.75rem; }

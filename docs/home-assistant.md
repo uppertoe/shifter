@@ -215,10 +215,26 @@ What shifter does after debounce:
 
 | State | Result |
 |---|---|
-| No nanny scheduled today **and** no open shift | `ignored` — background noise |
-| Exactly one nanny expected today, none arrived yet | `arrival` — opens an unconfirmed shift |
-| Exactly one open shift, no expected arrival pending | `departure` — closes that shift |
-| Anything ambiguous (multiple expected, multiple open, etc.) | `unresolved` — surfaced in the dashboard for one-click manual attribution |
+| No nanny scheduled today **and** no fresh open shift | `ignored` — background noise |
+| One expected nanny hasn't arrived yet | `arrival` — opens an unconfirmed shift (preferred even if a stale shift is still open) |
+| Exactly one fresh open shift, no expected arrival pending | `departure` — closes that shift |
+| Anything ambiguous (multiple expected, multiple fresh open, etc.) | `unresolved` — surfaced in the dashboard for one-click manual attribution |
+
+### Stale open shifts
+
+An open shift that was never clocked-out is "stale" and ignored by the
+resolver if either:
+
+- another shift has been started after it (the next bucket has begun), or
+- it's been open for longer than `SHIFT_STALE_HOURS` (default 16h).
+
+Stale shifts stay open in the database and are flagged on the dashboard for
+manual close/edit. This stops a stray morning event (e.g. a parent leaving
+for work) from accidentally closing yesterday's never-clocked-out shift.
+
+The 16h default fits a long overnight shift (e.g. 7pm Mon → 9am Tue) without
+prematurely staling it. Bump `SHIFT_STALE_HOURS` if you have a nanny who
+genuinely works longer than that.
 
 If you pass `event_type=arrival` or `departure`, shifter still resolves the
 *nanny* via the schedule, but it will only attempt the matching transition. If

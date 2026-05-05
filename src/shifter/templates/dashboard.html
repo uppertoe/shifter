@@ -31,6 +31,9 @@
         <strong class="nanny-chip">{{ v.nanny.name }}</strong>
         <small class="muted">started {{ format_dt(v.shift.start_time, tz) }}</small>
         <small class="muted"><strong>{{ format_duration(v.shift.start_time, v.shift.end_time) }}</strong> · ≈ {{ format_cents(v.computed.pay_cents) }}</small>
+        {% if v.is_stale %}
+          <small class="pill stale">stale — needs manual close</small>
+        {% endif %}
       </div>
       <div class="pending-shots">
         {% if v.shots.arrival %}

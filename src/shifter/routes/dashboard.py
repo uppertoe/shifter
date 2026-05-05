@@ -6,7 +6,7 @@ from pathlib import Path
 from fastapi import APIRouter, Depends, HTTPException, Request, status
 from fastapi.responses import FileResponse, HTMLResponse
 
-from shifter import pay, repos, screenshots
+from shifter import ha, pay, repos, screenshots
 from shifter.auth import current_user
 from shifter.config import Settings, get_settings
 from shifter.main import get_db, templates
@@ -57,7 +57,11 @@ def index(
     week_start = today - timedelta(days=today.weekday())  # Monday
 
     open_shifts = repos.list_shifts(conn, open_only=True)
-    open_views = [_shift_brief(conn, s, now=now, with_shots=True) for s in open_shifts]
+    open_views = []
+    for s in open_shifts:
+        v = _shift_brief(conn, s, now=now, with_shots=True)
+        v["is_stale"] = ha.is_open_shift_stale(conn, s, as_of=now, settings=settings)
+        open_views.append(v)
 
     # Pending review: only this-week-or-newer on the dashboard for at-a-glance
     # focus. Older unconfirmed shifts get a footer link.

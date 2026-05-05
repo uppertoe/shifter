@@ -54,6 +54,7 @@ Open `http://127.0.0.1:8765` — no header injection needed. The DB lives at `da
 | `ALLOWED_USERS` | _(empty = allow all)_ | Comma-separated `Remote-User` allowlist. |
 | `FY_START_MONTH` | `7` | Financial year start month (AU = July, NZ = April, etc.). |
 | `HA_DEBOUNCE_MINUTES` | `15` | Same-source events within this window are recorded as `ignored`. |
+| `SHIFT_STALE_HOURS` | `16` | Open shifts older than this stop accepting auto-attributed events (the "left clocked-in overnight" case). The shift stays open in the DB and is flagged on the dashboard for manual close. |
 | `FRIGATE_BASE_URL` | _(empty)_ | If set (e.g. `https://frigate.example.com`), the dashboard adds a "Frigate" link next to each pending HA shift, scoped to that shift's day. |
 | `DEV_MODE` | `false` | When true, auth is bypassed. **Never enable in prod.** |
 | `DEV_USER` | `dev` | Username assumed when dev mode receives no `Remote-User`. |

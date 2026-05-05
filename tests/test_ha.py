@@ -84,6 +84,148 @@ def test_no_schedule_but_open_shift_still_resolves_as_departure(conn):
     assert r.resolution == "departure"
 
 
+# --- staleness of long-open shifts -----------------------------------------
+
+def test_morning_departure_does_not_close_yesterdays_open_shift(conn):
+    """Parent leaves for work next morning: the still-open shift from yesterday
+    must not be closed by that event. With shift_stale_hours=16, an open shift
+    from 23h ago is stale → no fresh open shifts. With nobody scheduled for
+    today either, the event is ignored (background noise) rather than
+    burdening the unresolved queue."""
+    a, _ = _seed_two_nannies(conn)
+    schedule.add_one_off(conn, nanny_id=a, on_date=date(2026, 5, 4),
+                          start_time="07:00", end_time="18:00")
+    repos.create_shift(
+        conn, nanny_id=a,
+        start_time=datetime(2026, 5, 4, 7, 0, tzinfo=MEL).isoformat(),
+        end_time=None, rate_override_cents=None, flat_rate_cents=None,
+        notes=None, source="ha", confirmed=False, created_by="ha-webhook",
+    )
+    # Next morning, parent leaves for work → departure-hint event
+    r = ha.process_event(
+        conn,
+        occurred_at=datetime(2026, 5, 5, 6, 30, tzinfo=MEL),
+        source="frigate-front-door", event_type_hint="departure",
+        settings=_settings(shift_stale_hours=16),
+    )
+    assert r.resolution == "ignored"
+    yesterday = conn.execute(
+        "SELECT end_time FROM shifts WHERE start_time < ?",
+        ("2026-05-05T00:00:00+10:00",),
+    ).fetchone()
+    assert yesterday["end_time"] is None
+
+
+def test_morning_departure_unresolved_when_someone_scheduled_today(conn):
+    """Same scenario but a nanny is scheduled today — the morning departure
+    can't be ignored because there IS activity expected. Departure hint with
+    no fresh open shift → unresolved."""
+    a, j = _seed_two_nannies(conn)
+    schedule.add_one_off(conn, nanny_id=a, on_date=date(2026, 5, 4),
+                          start_time="07:00", end_time="18:00")
+    schedule.add_one_off(conn, nanny_id=j, on_date=date(2026, 5, 5),
+                          start_time="07:00", end_time="18:00")
+    repos.create_shift(
+        conn, nanny_id=a,
+        start_time=datetime(2026, 5, 4, 7, 0, tzinfo=MEL).isoformat(),
+        end_time=None, rate_override_cents=None, flat_rate_cents=None,
+        notes=None, source="ha", confirmed=False, created_by="ha-webhook",
+    )
+    r = ha.process_event(
+        conn,
+        occurred_at=datetime(2026, 5, 5, 6, 30, tzinfo=MEL),
+        source="frigate-front-door", event_type_hint="departure",
+        settings=_settings(shift_stale_hours=16),
+    )
+    assert r.resolution == "unresolved"
+    yesterday = conn.execute(
+        "SELECT end_time FROM shifts WHERE start_time < ?",
+        ("2026-05-05T00:00:00+10:00",),
+    ).fetchone()
+    assert yesterday["end_time"] is None
+
+
+def test_next_days_arrival_marks_yesterdays_shift_stale(conn):
+    """Once a new shift starts, the old open shift is stale (rule a)."""
+    a, j = _seed_two_nannies(conn)
+    schedule.add_one_off(conn, nanny_id=a, on_date=date(2026, 5, 4),
+                          start_time="07:00", end_time="18:00")
+    schedule.add_one_off(conn, nanny_id=j, on_date=date(2026, 5, 5),
+                          start_time="07:00", end_time="18:00")
+    # Anita opened yesterday, never closed
+    repos.create_shift(
+        conn, nanny_id=a,
+        start_time=datetime(2026, 5, 4, 7, 0, tzinfo=MEL).isoformat(),
+        end_time=None, rate_override_cents=None, flat_rate_cents=None,
+        notes=None, source="ha", confirmed=False, created_by="ha-webhook",
+    )
+    # Joy arrives today → fresh shift opens cleanly
+    r = ha.process_event(
+        conn,
+        occurred_at=datetime(2026, 5, 5, 7, 5, tzinfo=MEL),
+        source="cam", event_type_hint=None,
+        settings=_settings(shift_stale_hours=99),  # rule (c) inert
+    )
+    assert r.resolution == "arrival"
+    assert r.nanny_id == j
+    # Both shifts are open now: yesterday's stale + today's fresh
+    open_count = conn.execute("SELECT COUNT(*) FROM shifts WHERE end_time IS NULL").fetchone()[0]
+    assert open_count == 2
+
+
+def test_departure_after_next_arrival_closes_only_fresh_shift(conn):
+    """With both yesterday's stale + today's fresh open, a departure event
+    closes today's fresh one — not yesterday's stale one."""
+    a, j = _seed_two_nannies(conn)
+    schedule.add_one_off(conn, nanny_id=j, on_date=date(2026, 5, 5),
+                          start_time="07:00", end_time="18:00")
+    # Yesterday's stale Anita shift
+    stale_id = repos.create_shift(
+        conn, nanny_id=a,
+        start_time=datetime(2026, 5, 4, 7, 0, tzinfo=MEL).isoformat(),
+        end_time=None, rate_override_cents=None, flat_rate_cents=None,
+        notes=None, source="ha", confirmed=False, created_by="ha-webhook",
+    )
+    # Today's fresh Joy shift
+    fresh_id = repos.create_shift(
+        conn, nanny_id=j,
+        start_time=datetime(2026, 5, 5, 7, 0, tzinfo=MEL).isoformat(),
+        end_time=None, rate_override_cents=None, flat_rate_cents=None,
+        notes=None, source="ha", confirmed=False, created_by="ha-webhook",
+    )
+    r = ha.process_event(
+        conn,
+        occurred_at=datetime(2026, 5, 5, 17, 30, tzinfo=MEL),
+        source="cam-out", event_type_hint="departure",
+        settings=_settings(shift_stale_hours=99),
+    )
+    assert r.resolution == "departure"
+    assert r.shift_id == fresh_id
+    stale = conn.execute("SELECT end_time FROM shifts WHERE id = ?", (stale_id,)).fetchone()
+    assert stale["end_time"] is None  # untouched
+
+
+def test_overnight_shift_under_threshold_still_fresh(conn):
+    """7pm Mon arrival, 7am Tue departure (12h). With default 16h threshold,
+    still fresh — overnight nanny case shouldn't be broken."""
+    a, _ = _seed_two_nannies(conn)
+    schedule.add_one_off(conn, nanny_id=a, on_date=date(2026, 5, 4),
+                          start_time="19:00", end_time="08:00")
+    repos.create_shift(
+        conn, nanny_id=a,
+        start_time=datetime(2026, 5, 4, 19, 0, tzinfo=MEL).isoformat(),
+        end_time=None, rate_override_cents=None, flat_rate_cents=None,
+        notes=None, source="ha", confirmed=False, created_by="ha-webhook",
+    )
+    r = ha.process_event(
+        conn,
+        occurred_at=datetime(2026, 5, 5, 7, 0, tzinfo=MEL),
+        source="cam-out", event_type_hint="departure",
+        settings=_settings(shift_stale_hours=16),
+    )
+    assert r.resolution == "departure"
+
+
 # --- 15-min rounding -------------------------------------------------------
 
 def test_arrival_floors_start_to_nearest_15min(conn):

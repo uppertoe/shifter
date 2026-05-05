@@ -55,25 +55,57 @@ def _is_debounced(
     return row is not None
 
 
-def _has_activity_today(conn: sqlite3.Connection, occurred_at: datetime) -> bool:
-    """Is there any expected slot or open shift the event could plausibly belong to?
+def is_open_shift_stale(
+    conn: sqlite3.Connection, shift, *, as_of: datetime, settings: Settings
+) -> bool:
+    """An open shift is stale and no longer accepts auto-attributed events if:
+    (a) another shift has started after it (the next bucket has begun), or
+    (c) it has been open for longer than ``shift_stale_hours`` (default 16h).
 
-    If neither, the event is treated as background noise (random Frigate trigger,
-    delivery driver, the cat) and ignored — keeps the unresolved queue meaningful.
+    Stale shifts stay open in the DB and are surfaced on the dashboard for
+    manual close/edit; they're just invisible to the HA resolver.
     """
-    if repos.list_shifts(conn, open_only=True):
+    start = datetime.fromisoformat(shift["start_time"])
+    if (as_of - start).total_seconds() > settings.shift_stale_hours * 3600:
+        return True
+    later = conn.execute(
+        "SELECT 1 FROM shifts WHERE start_time > ? LIMIT 1",
+        (shift["start_time"],),
+    ).fetchone()
+    return later is not None
+
+
+def _fresh_open_shifts(
+    conn: sqlite3.Connection, *, as_of: datetime, settings: Settings
+) -> list:
+    return [s for s in repos.list_shifts(conn, open_only=True)
+            if not is_open_shift_stale(conn, s, as_of=as_of, settings=settings)]
+
+
+def _has_activity_today(
+    conn: sqlite3.Connection, occurred_at: datetime, settings: Settings
+) -> bool:
+    """Is there any expected slot or *fresh* open shift the event could plausibly
+    belong to? Stale open shifts don't count — they'd otherwise let stray
+    morning events close yesterday's never-clocked-out shift.
+    """
+    if _fresh_open_shifts(conn, as_of=occurred_at, settings=settings):
         return True
     return bool(schedule.expected_on_date(conn, occurred_at.date(), include_cancelled=False))
 
 
-def _try_arrival(conn: sqlite3.Connection, occurred_at: datetime):
-    """Find an expected-but-not-arrived nanny on the event's date."""
+def _try_arrival(
+    conn: sqlite3.Connection, occurred_at: datetime, settings: Settings
+):
+    """Find an expected-but-not-arrived nanny on the event's date.
+    A nanny with only a *stale* open shift counts as not-yet-arrived today,
+    so consecutive-day work resolves cleanly."""
     on_date = occurred_at.date()
     expected = schedule.expected_on_date(conn, on_date, include_cancelled=False)
     if not expected:
         return None, None  # nobody expected
-    open_shifts = repos.list_shifts(conn, open_only=True)
-    open_nanny_ids = {s["nanny_id"] for s in open_shifts}
+    fresh = _fresh_open_shifts(conn, as_of=occurred_at, settings=settings)
+    open_nanny_ids = {s["nanny_id"] for s in fresh}
     not_arrived = [e for e in expected if e.nanny_id not in open_nanny_ids]
     distinct_nannies = {e.nanny_id for e in not_arrived}
     if len(distinct_nannies) == 1:
@@ -82,10 +114,12 @@ def _try_arrival(conn: sqlite3.Connection, occurred_at: datetime):
     return None, None
 
 
-def _try_departure(conn: sqlite3.Connection):
-    open_shifts = repos.list_shifts(conn, open_only=True)
-    if len(open_shifts) == 1:
-        return open_shifts[0]
+def _try_departure(
+    conn: sqlite3.Connection, *, as_of: datetime, settings: Settings
+):
+    fresh = _fresh_open_shifts(conn, as_of=as_of, settings=settings)
+    if len(fresh) == 1:
+        return fresh[0]
     return None
 
 
@@ -233,15 +267,15 @@ def process_event(
         )
         return EventResult(eid, resolution, None, None, note)
 
-    # 2. Background-noise check: if nobody is scheduled today and no shift is
-    # open, an event almost certainly isn't a nanny — record as ignored rather
-    # than burdening the unresolved queue.
-    if not _has_activity_today(conn, occurred_at):
+    # 2. Background-noise check: if nobody is scheduled today and no fresh
+    # shift is open, an event almost certainly isn't a nanny — record as
+    # ignored rather than burdening the unresolved queue.
+    if not _has_activity_today(conn, occurred_at, settings):
         return _record("ignored", "no nanny scheduled today and no open shifts")
 
     # 3. Hint-driven resolution
     if event_type_hint == "arrival":
-        nanny_id, exp_id = _try_arrival(conn, occurred_at)
+        nanny_id, exp_id = _try_arrival(conn, occurred_at, settings)
         if nanny_id:
             return _create_arrival(
                 conn, nanny_id=nanny_id, expected_shift_id=exp_id,
@@ -250,34 +284,38 @@ def process_event(
         return _record("unresolved", "hint=arrival but 0 or >1 candidate nannies on the schedule")
 
     if event_type_hint == "departure":
-        open_shift = _try_departure(conn)
+        open_shift = _try_departure(conn, as_of=occurred_at, settings=settings)
         if open_shift is not None:
             return _create_departure(
                 conn, open_shift_row=open_shift,
                 occurred_at=occurred_at, source=source, event_type_hint=event_type_hint,
             )
-        return _record("unresolved", "hint=departure but 0 or >1 open shifts")
+        return _record("unresolved", "hint=departure but 0 or >1 fresh open shifts")
 
-    # 4. No hint — infer from state
-    open_shifts = repos.list_shifts(conn, open_only=True)
-    arrival_nanny_id, exp_id = _try_arrival(conn, occurred_at)
+    # 4. No hint — infer from state. Stale open shifts are excluded so a stray
+    # morning event can't accidentally close yesterday's never-clocked-out
+    # shift; that one stays open for manual cleanup. When an expected nanny
+    # hasn't arrived yet today, we prefer the arrival interpretation — once
+    # her new shift exists, the previous one becomes stale by rule (a) for
+    # all future events.
+    fresh_open = _fresh_open_shifts(conn, as_of=occurred_at, settings=settings)
+    arrival_nanny_id, exp_id = _try_arrival(conn, occurred_at, settings)
 
-    if not open_shifts and arrival_nanny_id is not None:
+    if arrival_nanny_id is not None:
         return _create_arrival(
             conn, nanny_id=arrival_nanny_id, expected_shift_id=exp_id,
             occurred_at=occurred_at, source=source, event_type_hint=event_type_hint,
         )
-    if len(open_shifts) == 1 and arrival_nanny_id is None:
+    if len(fresh_open) == 1:
         return _create_departure(
-            conn, open_shift_row=open_shifts[0],
+            conn, open_shift_row=fresh_open[0],
             occurred_at=occurred_at, source=source, event_type_hint=event_type_hint,
         )
 
-    note = (
-        f"ambiguous: {len(open_shifts)} open shift(s); "
-        + ("a candidate arrival is also possible" if arrival_nanny_id else "no clear arrival candidate")
+    return _record(
+        "unresolved",
+        f"ambiguous: {len(fresh_open)} fresh open shift(s); no clear arrival candidate",
     )
-    return _record("unresolved", note)
 
 
 # --- manual attribution of unresolved events ---------------------------------

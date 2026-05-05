@@ -19,6 +19,12 @@ class Settings(BaseSettings):
     allowed_users: str = Field(default="")
     fy_start_month: int = Field(default=7, ge=1, le=12)
     ha_debounce_minutes: int = Field(default=15, ge=0)
+    # Open shifts older than this are treated as "stale" by the HA resolver:
+    # incoming events stop propagating to them, so the next day's nanny can
+    # be attributed cleanly. The stale shift stays open in the DB and is
+    # surfaced on the dashboard for manual cleanup.
+    # 16h fits a long overnight shift (e.g. 7pm Mon → 9am Tue) comfortably.
+    shift_stale_hours: int = Field(default=16, ge=1)
     # Optional. When set, the dashboard renders a "review on Frigate" link next
     # to each pending HA-attributed shift, scoped to that shift's calendar day.
     # e.g. "https://frigate.example.com" — no trailing slash.

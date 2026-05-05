@@ -14,6 +14,7 @@ services:
       SCREENSHOT_RETENTION_DAYS: 90
       FY_START_MONTH: 7
       HA_DEBOUNCE_MINUTES: 15
+      SHIFT_STALE_HOURS: 16
       FRIGATE_BASE_URL: ${FRIGATE_BASE_URL:-}
     volumes:
       # Container runs as uid=1000. If your host user is uid 1000 too (typical

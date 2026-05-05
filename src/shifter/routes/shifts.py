@@ -51,18 +51,21 @@ def _shift_view(conn, settings: Settings, shift_row) -> dict:
 def list_page(
     request: Request,
     nanny_id: str | None = None,
-    paid: str | None = None,    # 'yes' | 'no' | None
+    paid: str | None = None,        # 'yes' | 'no' | None
+    confirmed: str | None = None,   # 'yes' | 'no' | None
     open_only: int = 0,
     conn=Depends(get_db),
     settings: Settings = Depends(get_settings),
     user: str = Depends(current_user),
 ):
     paid_filter = {"yes": True, "no": False}.get(paid)
+    confirmed_filter = {"yes": True, "no": False}.get(confirmed)
     nanny_id_int = int(nanny_id) if nanny_id else None
     rows = repos.list_shifts(
         conn,
         nanny_id=nanny_id_int,
         paid=paid_filter,
+        confirmed=confirmed_filter,
         open_only=bool(open_only),
         limit=200,
     )
@@ -77,6 +80,7 @@ def list_page(
             "nannies": nannies,
             "filter_nanny_id": nanny_id_int,
             "filter_paid": paid,
+            "filter_confirmed": confirmed,
             "filter_open": bool(open_only),
             "tz": settings.zoneinfo,
         },

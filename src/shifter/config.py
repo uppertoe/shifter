@@ -19,6 +19,10 @@ class Settings(BaseSettings):
     allowed_users: str = Field(default="")
     fy_start_month: int = Field(default=7, ge=1, le=12)
     ha_debounce_minutes: int = Field(default=15, ge=0)
+    # Optional. When set, the dashboard renders a "review on Frigate" link next
+    # to each pending HA-attributed shift, scoped to that shift's calendar day.
+    # e.g. "https://frigate.example.com" — no trailing slash.
+    frigate_base_url: str = Field(default="")
 
     # DEV ONLY. When true, auth is bypassed: routes assume `dev_user`
     # and the API key check is skipped. NEVER set in production.

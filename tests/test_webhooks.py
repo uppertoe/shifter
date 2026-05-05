@@ -18,9 +18,12 @@ def client(conn, monkeypatch, tmp_path):
     """A TestClient backed by the in-memory `conn` fixture, with the lifespan
     short-circuited so it doesn't try to open a real DB file or start the
     cleanup loop."""
+    shots_dir = tmp_path / "shots"
+    shots_dir.mkdir()
     settings = Settings(api_key="topsecret", allowed_users="",
                          database_path=tmp_path / "unused.db",
-                         screenshot_dir=tmp_path / "shots")
+                         screenshot_dir=shots_dir,
+                         frigate_base_url="https://frigate.test")
 
     def _fake_get_settings():
         return settings
@@ -125,6 +128,123 @@ def test_reports_accepts_empty_nanny_id(client):
     r = client.get("/reports?nanny_id=&preset=this_fy",
                     headers={"Remote-User": "alice"})
     assert r.status_code == 200, r.text
+
+
+# --- screenshot serving + dashboard pending-review surface ------------------
+
+_helper_seq = [0]
+
+
+def _make_shift_with_shots(conn, shots_dir, *, day, has_arrival=True, has_departure=True):
+    """Fixture helper: create a pending HA shift with optional snapshots on disk."""
+    _helper_seq[0] += 1
+    nid = conn.execute(
+        "INSERT INTO nannies (name) VALUES (?)", (f"Nanny{_helper_seq[0]}",)
+    ).lastrowid
+    start = datetime(day.year, day.month, day.day, 7, 30, tzinfo=MEL)
+    end = datetime(day.year, day.month, day.day, 17, 0, tzinfo=MEL)
+    shift_id = conn.execute(
+        "INSERT INTO shifts (nanny_id, start_time, end_time, source, confirmed,"
+        " created_by, updated_by) VALUES (?, ?, ?, 'ha', 0, 'ha-webhook', 'ha-webhook')",
+        (nid, start.isoformat(), end.isoformat()),
+    ).lastrowid
+    if has_arrival:
+        eid = conn.execute(
+            "INSERT INTO ha_events (occurred_at, source, nanny_id, shift_id, resolution)"
+            " VALUES (?, 'cam', ?, ?, 'arrival')",
+            (start.isoformat(), nid, shift_id),
+        ).lastrowid
+        rel = f"{day.year:04d}/{day.month:02d}/arr-{shift_id}.jpg"
+        (shots_dir / rel).parent.mkdir(parents=True, exist_ok=True)
+        (shots_dir / rel).write_bytes(b"\xff\xd8arrival")
+        conn.execute(
+            "INSERT INTO screenshots (ha_event_id, filename, content_type, size_bytes)"
+            " VALUES (?, ?, 'image/jpeg', 7)", (eid, rel),
+        )
+    if has_departure:
+        eid = conn.execute(
+            "INSERT INTO ha_events (occurred_at, source, nanny_id, shift_id, resolution)"
+            " VALUES (?, 'cam', ?, ?, 'departure')",
+            (end.isoformat(), nid, shift_id),
+        ).lastrowid
+        rel = f"{day.year:04d}/{day.month:02d}/dep-{shift_id}.jpg"
+        (shots_dir / rel).parent.mkdir(parents=True, exist_ok=True)
+        (shots_dir / rel).write_bytes(b"\xff\xd8departure")
+        conn.execute(
+            "INSERT INTO screenshots (ha_event_id, filename, content_type, size_bytes)"
+            " VALUES (?, ?, 'image/jpeg', 9)", (eid, rel),
+        )
+    return shift_id
+
+
+def test_screenshot_serving_requires_login(client, conn, tmp_path):
+    shots_dir = tmp_path / "shots"
+    rel = "2026/05/test.jpg"
+    (shots_dir / "2026/05").mkdir(parents=True, exist_ok=True)
+    (shots_dir / rel).write_bytes(b"\xff\xd8x")
+    # No Remote-User header → 401
+    assert client.get(f"/screenshots/{rel}").status_code == 401
+
+
+def test_screenshot_serving_returns_file(client, tmp_path):
+    shots_dir = tmp_path / "shots"
+    rel = "2026/05/served.jpg"
+    (shots_dir / "2026/05").mkdir(parents=True, exist_ok=True)
+    (shots_dir / rel).write_bytes(b"\xff\xd8payload")
+    r = client.get(f"/screenshots/{rel}", headers={"Remote-User": "alice"})
+    assert r.status_code == 200
+    assert r.content == b"\xff\xd8payload"
+
+
+def test_screenshot_serving_blocks_traversal(client):
+    r = client.get("/screenshots/../../../etc/passwd",
+                    headers={"Remote-User": "alice"})
+    assert r.status_code == 404
+
+
+def test_dashboard_renders_pending_with_thumbnails(client, conn, tmp_path):
+    today = date.today()
+    sid = _make_shift_with_shots(conn, tmp_path / "shots", day=today)
+    r = client.get("/", headers={"Remote-User": "alice"})
+    assert r.status_code == 200
+    body = r.text
+    assert "Pending review" in body
+    assert "/screenshots/" in body  # a thumbnail was rendered
+    assert "https://frigate.test/review?date=" in body
+    assert f"/shifts/{sid}/confirm" in body
+
+
+def test_dashboard_groups_older_pending_into_count(client, conn, tmp_path):
+    today = date.today()
+    week_start = today - timedelta(days=today.weekday())
+    # one this week, one from before
+    _make_shift_with_shots(conn, tmp_path / "shots", day=today, has_departure=False)
+    older_day = week_start - timedelta(days=3)
+    _make_shift_with_shots(conn, tmp_path / "shots", day=older_day,
+                            has_arrival=False, has_departure=False)
+    r = client.get("/", headers={"Remote-User": "alice"})
+    assert r.status_code == 200
+    assert "1 older awaiting review" in r.text
+    assert "/shifts?confirmed=no" in r.text
+
+
+def test_shifts_list_filter_confirmed_no(client, conn):
+    nid = conn.execute("INSERT INTO nannies (name) VALUES ('A')").lastrowid
+    pending_id = conn.execute(
+        "INSERT INTO shifts (nanny_id, start_time, source, confirmed,"
+        " created_by, updated_by) VALUES (?, '2026-05-01T07:00:00+10:00',"
+        " 'ha', 0, 'x', 'x')", (nid,),
+    ).lastrowid
+    confirmed_id = conn.execute(
+        "INSERT INTO shifts (nanny_id, start_time, source, confirmed,"
+        " created_by, updated_by) VALUES (?, '2026-05-02T07:00:00+10:00',"
+        " 'manual', 1, 'x', 'x')", (nid,),
+    ).lastrowid
+    r = client.get("/shifts?confirmed=no", headers={"Remote-User": "alice"})
+    assert r.status_code == 200
+    # Each row links to /shifts/<id>/edit; check by id, not by date string.
+    assert f"/shifts/{pending_id}/edit" in r.text
+    assert f"/shifts/{confirmed_id}/edit" not in r.text
 
 
 def test_current_shift_counts_unresolved_and_returns_last_event(client, conn):

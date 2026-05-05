@@ -50,6 +50,31 @@ def store_screenshot(
     return str(rel_dir / name), len(content)
 
 
+def shots_for_shift(conn: sqlite3.Connection, shift_id: int) -> dict:
+    """Return the earliest arrival snapshot and the latest departure snapshot
+    for a shift, joined via ha_events. Either may be missing.
+    """
+    rows = conn.execute(
+        """
+        SELECT s.filename, s.content_type, e.resolution, e.occurred_at
+        FROM screenshots s
+        JOIN ha_events e ON e.id = s.ha_event_id
+        WHERE e.shift_id = ?
+          AND s.filename IS NOT NULL
+          AND e.resolution IN ('arrival', 'departure')
+        ORDER BY e.occurred_at ASC, s.id ASC
+        """,
+        (shift_id,),
+    ).fetchall()
+    arrival = next((r for r in rows if r["resolution"] == "arrival"), None)
+    departures = [r for r in rows if r["resolution"] == "departure"]
+    departure = departures[-1] if departures else None
+    return {
+        "arrival": dict(arrival) if arrival else None,
+        "departure": dict(departure) if departure else None,
+    }
+
+
 def prune_expired(conn: sqlite3.Connection, settings: Settings, *, now: datetime | None = None) -> int:
     """Delete screenshot files older than retention, except those on unpaid shifts.
 

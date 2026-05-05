@@ -20,6 +20,11 @@
       <option value="no"  {% if filter_paid == 'no'  %}selected{% endif %}>Unpaid only</option>
       <option value="yes" {% if filter_paid == 'yes' %}selected{% endif %}>Paid only</option>
     </select>
+    <select name="confirmed" onchange="this.form.submit()">
+      <option value="">Any review state</option>
+      <option value="no"  {% if filter_confirmed == 'no'  %}selected{% endif %}>Awaiting review</option>
+      <option value="yes" {% if filter_confirmed == 'yes' %}selected{% endif %}>Confirmed</option>
+    </select>
     <label class="open-toggle">
       <input type="checkbox" name="open_only" value="1" {% if filter_open %}checked{% endif %} onchange="this.form.submit()">
       Open only

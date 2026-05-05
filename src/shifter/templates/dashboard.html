@@ -51,27 +51,49 @@
 </section>
 {% endif %}
 
-{% if pending_shifts %}
+{% if pending_shifts or pending_older_count %}
 <section>
   <h2>Pending review <small class="muted">(from Home Assistant)</small></h2>
   {% for v in pending_shifts %}
-    <article class="shift-row">
-      <div>
-        <strong>{{ v.nanny.name }}</strong>
+    {% set day_iso = v.computed.start.date().isoformat() %}
+    <article class="pending-shift" style="--chip-bg: {{ nanny_color(v.nanny.id) }};">
+      <div class="pending-meta">
+        <strong class="nanny-chip">{{ v.nanny.name }}</strong>
         <small class="muted">{{ format_dt(v.shift.start_time, tz) }} – {{ format_dt(v.shift.end_time, tz) if v.shift.end_time else 'open' }}</small>
+        <small class="muted"><strong>{{ format_duration(v.shift.start_time, v.shift.end_time) }}</strong> · {{ format_cents(v.computed.pay_cents) }}</small>
       </div>
-      <div>
-        <strong>{{ format_duration(v.shift.start_time, v.shift.end_time) }}</strong>
-        <small class="muted">{{ format_cents(v.computed.pay_cents) }}</small>
+      <div class="pending-shots">
+        {% if v.shots.arrival %}
+          <a href="/screenshots/{{ v.shots.arrival.filename }}" target="_blank" title="Arrival snapshot">
+            <img src="/screenshots/{{ v.shots.arrival.filename }}" alt="arrival" class="pending-thumb">
+          </a>
+        {% endif %}
+        {% if v.shots.departure %}
+          <a href="/screenshots/{{ v.shots.departure.filename }}" target="_blank" title="Departure snapshot">
+            <img src="/screenshots/{{ v.shots.departure.filename }}" alt="departure" class="pending-thumb">
+          </a>
+        {% endif %}
+        {% if not v.shots.arrival and not v.shots.departure %}
+          <small class="muted">no snapshot</small>
+        {% endif %}
       </div>
-      <div role="group">
+      <div role="group" class="pending-actions">
         <form method="post" action="/shifts/{{ v.shift.id }}/confirm" style="display:inline; margin:0">
           <button type="submit">Confirm</button>
         </form>
         <a href="/shifts/{{ v.shift.id }}/edit" role="button" class="secondary outline">Edit</a>
+        {% if frigate_base_url %}
+          <a href="{{ frigate_base_url }}/review?date={{ day_iso }}"
+             target="_blank" rel="noopener"
+             role="button" class="secondary outline">Frigate</a>
+        {% endif %}
       </div>
     </article>
   {% endfor %}
+  {% if pending_older_count %}
+    <p><small class="muted">+ {{ pending_older_count }} older awaiting review —
+      <a href="/shifts?confirmed=no">review all</a></small></p>
+  {% endif %}
 </section>
 {% endif %}
 

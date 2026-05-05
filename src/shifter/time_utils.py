@@ -6,6 +6,20 @@ from datetime import datetime, timedelta
 from zoneinfo import ZoneInfo
 
 
+def floor_15min(dt: datetime) -> datetime:
+    """Round a datetime DOWN to the nearest 15-minute mark."""
+    return dt.replace(minute=(dt.minute // 15) * 15, second=0, microsecond=0)
+
+
+def ceil_15min(dt: datetime) -> datetime:
+    """Round a datetime UP to the nearest 15-minute mark. Already-aligned values
+    are returned unchanged."""
+    floored = floor_15min(dt)
+    if floored == dt:
+        return dt
+    return floored + timedelta(minutes=15)
+
+
 def parse_local_input(s: str, tz: ZoneInfo) -> datetime:
     """Parse an HTML <input type=datetime-local> value ('YYYY-MM-DDTHH:MM') in `tz`."""
     return datetime.fromisoformat(s).replace(tzinfo=tz)

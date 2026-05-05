@@ -252,10 +252,16 @@ def close(
 @router.post("/{shift_id}/confirm", response_class=HTMLResponse)
 def confirm(
     shift_id: int,
+    request: Request,
     conn=Depends(get_db),
     user: str = Depends(current_user),
 ):
     repos.confirm_shift(conn, shift_id, updated_by=user)
+    # HTMX submission from the dashboard pending-review card: return empty
+    # body so the card is swapped out in place. Plain browser submit (no
+    # HTMX) falls back to the legacy redirect.
+    if request.headers.get("HX-Request"):
+        return HTMLResponse("")
     return RedirectResponse("/shifts", status_code=status.HTTP_303_SEE_OTHER)
 
 

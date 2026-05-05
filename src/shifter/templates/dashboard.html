@@ -78,9 +78,10 @@
         {% endif %}
       </div>
       <div role="group" class="pending-actions">
-        <form method="post" action="/shifts/{{ v.shift.id }}/confirm" style="display:inline; margin:0">
-          <button type="submit">Confirm</button>
-        </form>
+        <button type="button"
+                hx-post="/shifts/{{ v.shift.id }}/confirm"
+                hx-target="closest .pending-shift"
+                hx-swap="outerHTML">Confirm</button>
         <a href="/shifts/{{ v.shift.id }}/edit" role="button" class="secondary outline">Edit</a>
         {% if frigate_base_url %}
           <a href="{{ frigate_base_url }}/review?date={{ day_iso }}"

@@ -23,10 +23,11 @@ from __future__ import annotations
 
 import sqlite3
 from dataclasses import dataclass
-from datetime import datetime, timedelta
+from datetime import datetime, time, timedelta
 
 from shifter import repos, schedule
 from shifter.config import Settings
+from shifter.time_utils import ceil_15min, floor_15min
 
 
 @dataclass
@@ -114,6 +115,40 @@ def _insert_event(
     return cur.lastrowid
 
 
+def _rounded_arrival_start(
+    conn: sqlite3.Connection,
+    *,
+    occurred_at: datetime,
+    expected_shift_id: int | None,
+    nanny_id: int | None = None,
+) -> datetime:
+    """Round arrival time DOWN to the nearest 15 min, but never before the
+    nanny's scheduled start for that day. If we have no expected_shift_id,
+    fall back to looking up by (nanny_id, date)."""
+    floored = floor_15min(occurred_at)
+    expected = None
+    if expected_shift_id is not None:
+        expected = conn.execute(
+            "SELECT start_time FROM expected_shifts WHERE id = ?",
+            (expected_shift_id,),
+        ).fetchone()
+    elif nanny_id is not None:
+        expected = conn.execute(
+            "SELECT start_time FROM expected_shifts"
+            " WHERE nanny_id = ? AND date = ? AND cancelled = 0"
+            " ORDER BY start_time ASC LIMIT 1",
+            (nanny_id, occurred_at.date().isoformat()),
+        ).fetchone()
+    if expected is None:
+        return floored
+    sched = datetime.combine(
+        occurred_at.date(),
+        time.fromisoformat(expected["start_time"]),
+        tzinfo=occurred_at.tzinfo,
+    )
+    return max(floored, sched)
+
+
 def _create_arrival(
     conn: sqlite3.Connection,
     *,
@@ -123,10 +158,13 @@ def _create_arrival(
     source: str | None,
     event_type_hint: str | None,
 ) -> EventResult:
+    start = _rounded_arrival_start(
+        conn, occurred_at=occurred_at, expected_shift_id=expected_shift_id,
+    )
     shift_id = repos.create_shift(
         conn,
         nanny_id=nanny_id,
-        start_time=occurred_at.isoformat(),
+        start_time=start.isoformat(),
         end_time=None,
         rate_override_cents=None,
         flat_rate_cents=None,
@@ -152,7 +190,8 @@ def _create_departure(
     source: str | None,
     event_type_hint: str | None,
 ) -> EventResult:
-    repos.close_shift(conn, open_shift_row["id"], occurred_at.isoformat(), updated_by="ha-webhook")
+    end = ceil_15min(occurred_at)
+    repos.close_shift(conn, open_shift_row["id"], end.isoformat(), updated_by="ha-webhook")
     eid = _insert_event(
         conn,
         occurred_at=occurred_at, source=source, event_type_hint=event_type_hint,
@@ -262,10 +301,13 @@ def attribute_unresolved(
     occurred_at = datetime.fromisoformat(event["occurred_at"])
 
     if direction == "arrival":
+        start = _rounded_arrival_start(
+            conn, occurred_at=occurred_at, expected_shift_id=None, nanny_id=nanny_id,
+        )
         shift_id = repos.create_shift(
             conn,
             nanny_id=nanny_id,
-            start_time=occurred_at.isoformat(),
+            start_time=start.isoformat(),
             end_time=None,
             rate_override_cents=None, flat_rate_cents=None, notes=None,
             source="ha", confirmed=False,
@@ -283,7 +325,8 @@ def attribute_unresolved(
         if not open_for_nanny:
             raise ValueError(f"nanny {nanny_id} has no open shift to close")
         shift = open_for_nanny[0]
-        repos.close_shift(conn, shift["id"], occurred_at.isoformat(), updated_by=f"manual:{user}")
+        end = ceil_15min(occurred_at)
+        repos.close_shift(conn, shift["id"], end.isoformat(), updated_by=f"manual:{user}")
         conn.execute(
             "UPDATE ha_events SET resolution='departure', nanny_id=?, shift_id=?,"
             " resolution_note='manually attributed' WHERE id = ?",

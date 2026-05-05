@@ -84,6 +84,95 @@ def test_no_schedule_but_open_shift_still_resolves_as_departure(conn):
     assert r.resolution == "departure"
 
 
+# --- 15-min rounding -------------------------------------------------------
+
+def test_arrival_floors_start_to_nearest_15min(conn):
+    a, _ = _seed_two_nannies(conn)
+    schedule.add_one_off(conn, nanny_id=a, on_date=date(2026, 5, 4),
+                          start_time="07:00", end_time="18:00")
+    r = ha.process_event(
+        conn,
+        occurred_at=datetime(2026, 5, 4, 7, 23, tzinfo=MEL),
+        source="cam", event_type_hint=None,
+        settings=_settings(),
+    )
+    shift = conn.execute("SELECT start_time FROM shifts WHERE id = ?", (r.shift_id,)).fetchone()
+    # 07:23 → floor 07:15
+    assert shift["start_time"].startswith("2026-05-04T07:15:00")
+
+
+def test_arrival_clamps_to_scheduled_start_when_early(conn):
+    a, _ = _seed_two_nannies(conn)
+    schedule.add_one_off(conn, nanny_id=a, on_date=date(2026, 5, 4),
+                          start_time="07:00", end_time="18:00")
+    r = ha.process_event(
+        conn,
+        occurred_at=datetime(2026, 5, 4, 6, 52, tzinfo=MEL),
+        source="cam", event_type_hint=None,
+        settings=_settings(),
+    )
+    shift = conn.execute("SELECT start_time FROM shifts WHERE id = ?", (r.shift_id,)).fetchone()
+    # 06:52 → floor 06:45 → clamp to 07:00
+    assert shift["start_time"].startswith("2026-05-04T07:00:00")
+
+
+def test_departure_ceils_end_to_nearest_15min(conn):
+    a, _ = _seed_two_nannies(conn)
+    schedule.add_one_off(conn, nanny_id=a, on_date=date(2026, 5, 4),
+                          start_time="07:00", end_time="18:00")
+    arr = ha.process_event(
+        conn,
+        occurred_at=datetime(2026, 5, 4, 7, 2, tzinfo=MEL),
+        source="cam", event_type_hint=None,
+        settings=_settings(),
+    )
+    # Use a different source to avoid debounce.
+    ha.process_event(
+        conn,
+        occurred_at=datetime(2026, 5, 4, 17, 53, tzinfo=MEL),
+        source="cam-out", event_type_hint=None,
+        settings=_settings(),
+    )
+    shift = conn.execute("SELECT end_time FROM shifts WHERE id = ?", (arr.shift_id,)).fetchone()
+    # 17:53 → ceil 18:00
+    assert shift["end_time"].startswith("2026-05-04T18:00:00")
+
+
+def test_departure_unchanged_when_already_aligned(conn):
+    a, _ = _seed_two_nannies(conn)
+    schedule.add_one_off(conn, nanny_id=a, on_date=date(2026, 5, 4),
+                          start_time="07:00", end_time="18:00")
+    arr = ha.process_event(
+        conn,
+        occurred_at=datetime(2026, 5, 4, 7, 2, tzinfo=MEL),
+        source="cam", event_type_hint=None,
+        settings=_settings(),
+    )
+    ha.process_event(
+        conn,
+        occurred_at=datetime(2026, 5, 4, 18, 0, tzinfo=MEL),
+        source="cam-out", event_type_hint=None,
+        settings=_settings(),
+    )
+    shift = conn.execute("SELECT end_time FROM shifts WHERE id = ?", (arr.shift_id,)).fetchone()
+    assert shift["end_time"].startswith("2026-05-04T18:00:00")
+
+
+def test_manual_attribution_rounds_arrival_via_schedule(conn):
+    a, _ = _seed_two_nannies(conn)
+    schedule.add_one_off(conn, nanny_id=a, on_date=date(2026, 5, 4),
+                          start_time="07:00", end_time="18:00")
+    # Create an unresolved event by simulating an ambiguous occurrence.
+    eid = conn.execute(
+        "INSERT INTO ha_events (occurred_at, source, resolution)"
+        " VALUES ('2026-05-04T06:48:00+10:00', 'cam', 'unresolved')",
+    ).lastrowid
+    r = ha.attribute_unresolved(conn, eid, nanny_id=a, direction="arrival", user="me")
+    shift = conn.execute("SELECT start_time FROM shifts WHERE id = ?", (r.shift_id,)).fetchone()
+    # 06:48 → floor 06:45 → clamp to 07:00
+    assert shift["start_time"].startswith("2026-05-04T07:00:00")
+
+
 def test_unresolved_when_two_expected_no_open(conn):
     a, j = _seed_two_nannies(conn)
     for nid in (a, j):

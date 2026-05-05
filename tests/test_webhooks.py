@@ -247,6 +247,35 @@ def test_shifts_list_filter_confirmed_no(client, conn):
     assert f"/shifts/{confirmed_id}/edit" not in r.text
 
 
+def test_confirm_with_htmx_returns_empty_body(client, conn):
+    nid = conn.execute("INSERT INTO nannies (name) VALUES ('A')").lastrowid
+    sid = conn.execute(
+        "INSERT INTO shifts (nanny_id, start_time, source, confirmed,"
+        " created_by, updated_by) VALUES (?, '2026-05-04T07:00:00+10:00',"
+        " 'ha', 0, 'x', 'x')", (nid,),
+    ).lastrowid
+    r = client.post(f"/shifts/{sid}/confirm",
+                     headers={"HX-Request": "true", "Remote-User": "alice"})
+    assert r.status_code == 200
+    assert r.text == ""
+    row = conn.execute("SELECT confirmed FROM shifts WHERE id = ?", (sid,)).fetchone()
+    assert row["confirmed"] == 1
+
+
+def test_confirm_without_htmx_redirects(client, conn):
+    nid = conn.execute("INSERT INTO nannies (name) VALUES ('A')").lastrowid
+    sid = conn.execute(
+        "INSERT INTO shifts (nanny_id, start_time, source, confirmed,"
+        " created_by, updated_by) VALUES (?, '2026-05-04T07:00:00+10:00',"
+        " 'ha', 0, 'x', 'x')", (nid,),
+    ).lastrowid
+    r = client.post(f"/shifts/{sid}/confirm",
+                     headers={"Remote-User": "alice"},
+                     follow_redirects=False)
+    assert r.status_code == 303
+    assert r.headers["location"] == "/shifts"
+
+
 def test_current_shift_counts_unresolved_and_returns_last_event(client, conn):
     conn.execute(
         "INSERT INTO ha_events (occurred_at, source, resolution)"

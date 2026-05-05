@@ -49,7 +49,7 @@ def _resolve_period(
 def view(
     request: Request,
     preset: str | None = None,
-    nanny_id: int | None = None,
+    nanny_id: str | None = None,
     date_from: str | None = None,
     date_to: str | None = None,
     conn=Depends(get_db),
@@ -60,9 +60,10 @@ def view(
     start, end, period_label = _resolve_period(
         preset, date_from, date_to, settings.fy_start_month, today
     )
+    nanny_id_int = int(nanny_id) if nanny_id else None
     totals = rep.per_nanny_totals(conn, start=start, end=end)
-    if nanny_id is not None:
-        totals = [t for t in totals if t.nanny_id == nanny_id]
+    if nanny_id_int is not None:
+        totals = [t for t in totals if t.nanny_id == nanny_id_int]
     nannies = repos.list_nannies(conn, include_inactive=True)
     grand = {
         "shift_count": sum(t.shift_count for t in totals),
@@ -80,7 +81,7 @@ def view(
             "totals": totals,
             "grand": grand,
             "nannies": nannies,
-            "filter_nanny_id": nanny_id,
+            "filter_nanny_id": nanny_id_int,
             "preset": preset or "this_fy",
             "date_from": start.isoformat(),
             "date_to": (end - timedelta(days=1)).isoformat(),

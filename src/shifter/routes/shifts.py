@@ -50,7 +50,7 @@ def _shift_view(conn, settings: Settings, shift_row) -> dict:
 @router.get("", response_class=HTMLResponse)
 def list_page(
     request: Request,
-    nanny_id: int | None = None,
+    nanny_id: str | None = None,
     paid: str | None = None,    # 'yes' | 'no' | None
     open_only: int = 0,
     conn=Depends(get_db),
@@ -58,9 +58,10 @@ def list_page(
     user: str = Depends(current_user),
 ):
     paid_filter = {"yes": True, "no": False}.get(paid)
+    nanny_id_int = int(nanny_id) if nanny_id else None
     rows = repos.list_shifts(
         conn,
-        nanny_id=nanny_id,
+        nanny_id=nanny_id_int,
         paid=paid_filter,
         open_only=bool(open_only),
         limit=200,
@@ -74,7 +75,7 @@ def list_page(
             "user": user,
             "shifts": views,
             "nannies": nannies,
-            "filter_nanny_id": nanny_id,
+            "filter_nanny_id": nanny_id_int,
             "filter_paid": paid,
             "filter_open": bool(open_only),
             "tz": settings.zoneinfo,

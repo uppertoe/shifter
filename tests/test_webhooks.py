@@ -111,6 +111,22 @@ def test_current_shift_ignores_closed_shifts(client, conn):
     assert body["shift"] is None
 
 
+# --- regression: empty nanny_id from "All nannies" dropdown -----------------
+
+def test_shifts_list_accepts_empty_nanny_id(client):
+    """The filter form's <option value=""> for "All nannies" submits
+    nanny_id= (empty). Must not 422."""
+    r = client.get("/shifts?nanny_id=&open_only=1",
+                    headers={"Remote-User": "alice"})
+    assert r.status_code == 200, r.text
+
+
+def test_reports_accepts_empty_nanny_id(client):
+    r = client.get("/reports?nanny_id=&preset=this_fy",
+                    headers={"Remote-User": "alice"})
+    assert r.status_code == 200, r.text
+
+
 def test_current_shift_counts_unresolved_and_returns_last_event(client, conn):
     conn.execute(
         "INSERT INTO ha_events (occurred_at, source, resolution)"

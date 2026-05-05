@@ -143,8 +143,13 @@ main > section:first-child { margin-block-start: 0; }
   border: 1px solid var(--pico-muted-border-color);
   display: block;
 }
-.pending-actions { display: flex; gap: 0.4rem; align-items: center; }
-.pending-actions a, .pending-actions button { margin: 0; }
+.pending-actions {
+  display: flex;
+  gap: 0.4rem;
+  align-items: center;
+  align-self: center;   /* override grid's default stretch in some browsers */
+}
+.pending-actions a, .pending-actions button { margin: 0; height: 2.5rem; line-height: 1; }
 @media (max-width: 720px) {
   .pending-shift { grid-template-columns: 1fr; }
   .pending-actions { flex-wrap: wrap; }

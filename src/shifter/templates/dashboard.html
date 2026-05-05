@@ -77,7 +77,7 @@
           <small class="muted">no snapshot</small>
         {% endif %}
       </div>
-      <div role="group" class="pending-actions">
+      <div class="pending-actions">
         <button type="button"
                 hx-post="/shifts/{{ v.shift.id }}/confirm"
                 hx-target="closest .pending-shift"

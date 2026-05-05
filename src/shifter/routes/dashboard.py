@@ -57,7 +57,7 @@ def index(
     week_start = today - timedelta(days=today.weekday())  # Monday
 
     open_shifts = repos.list_shifts(conn, open_only=True)
-    open_views = [_shift_brief(conn, s, now=now) for s in open_shifts]
+    open_views = [_shift_brief(conn, s, now=now, with_shots=True) for s in open_shifts]
 
     # Pending review: only this-week-or-newer on the dashboard for at-a-glance
     # focus. Older unconfirmed shifts get a footer link.

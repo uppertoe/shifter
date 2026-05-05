@@ -16,6 +16,12 @@
   text-decoration-color: var(--pico-primary);
 }
 .topbar .brand { text-decoration: none; }
+.topbar .brand.active {
+  text-decoration: underline;
+  text-decoration-thickness: 2px;
+  text-underline-offset: 6px;
+  text-decoration-color: var(--pico-primary);
+}
 .topbar .user { color: var(--pico-muted-color); }
 
 /* Single-row page header. Fixed min-height so swapping pages doesn't reflow

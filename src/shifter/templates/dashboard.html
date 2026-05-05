@@ -24,18 +24,33 @@
 <section>
   <h2>Open shifts</h2>
   {% for v in open_shifts %}
-    <article class="shift-row">
-      <div>
-        <strong>{{ v.nanny.name }}</strong>
+    {% set day_iso = v.computed.start.date().isoformat() %}
+    <article class="pending-shift" style="--chip-bg: {{ nanny_color(v.nanny.id) }};">
+      <div class="pending-meta">
+        <strong class="nanny-chip">{{ v.nanny.name }}</strong>
         <small class="muted">started {{ format_dt(v.shift.start_time, tz) }}</small>
+        <small class="muted"><strong>{{ format_duration(v.shift.start_time, v.shift.end_time) }}</strong> · ≈ {{ format_cents(v.computed.pay_cents) }}</small>
       </div>
-      <div>
-        <strong>{{ format_duration(v.shift.start_time, v.shift.end_time) }}</strong>
-        <small class="muted">≈ {{ format_cents(v.computed.pay_cents) }}</small>
+      <div class="pending-shots">
+        {% if v.shots.arrival %}
+          <a href="/screenshots/{{ v.shots.arrival.filename }}" target="_blank" title="Arrival snapshot">
+            <img src="/screenshots/{{ v.shots.arrival.filename }}" alt="arrival" class="pending-thumb">
+          </a>
+        {% else %}
+          <small class="muted">no snapshot</small>
+        {% endif %}
       </div>
-      <form method="post" action="/shifts/{{ v.shift.id }}/close" style="margin:0">
-        <button type="submit">Close now</button>
-      </form>
+      <div class="pending-actions">
+        <form method="post" action="/shifts/{{ v.shift.id }}/close" style="display:inline; margin:0">
+          <button type="submit">Close now</button>
+        </form>
+        <a href="/shifts/{{ v.shift.id }}/edit" role="button" class="secondary outline">Edit</a>
+        {% if frigate_base_url %}
+          <a href="{{ frigate_base_url }}/review?date={{ day_iso }}"
+             target="_blank" rel="noopener"
+             role="button" class="secondary outline">Frigate</a>
+        {% endif %}
+      </div>
     </article>
   {% endfor %}
 </section>

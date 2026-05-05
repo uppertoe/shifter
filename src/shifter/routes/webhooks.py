@@ -55,6 +55,58 @@ def post_event(
     })
 
 
+@router.get("/shift/current", dependencies=[Depends(require_api_key)])
+def current_shift(
+    conn=Depends(get_db),
+    settings: Settings = Depends(get_settings),
+):
+    """Snapshot for HA polling: open shift (if any) + unresolved-event count
+    + last HA event. Designed to drive a `rest` sensor on a 60s interval.
+    """
+    open_row = conn.execute(
+        "SELECT s.id AS shift_id, s.start_time, n.name AS nanny_name"
+        " FROM shifts s JOIN nannies n ON n.id = s.nanny_id"
+        " WHERE s.end_time IS NULL"
+        " ORDER BY s.start_time DESC LIMIT 1"
+    ).fetchone()
+
+    shift_payload = None
+    if open_row is not None:
+        started_at = datetime.fromisoformat(open_row["start_time"])
+        if started_at.tzinfo is None:
+            started_at = started_at.replace(tzinfo=settings.zoneinfo)
+        now = datetime.now(tz=settings.zoneinfo)
+        duration_minutes = max(0, int((now - started_at).total_seconds() // 60))
+        shift_payload = {
+            "shift_id": open_row["shift_id"],
+            "nanny_name": open_row["nanny_name"],
+            "started_at": started_at.isoformat(),
+            "duration_minutes": duration_minutes,
+        }
+
+    unresolved_count = conn.execute(
+        "SELECT COUNT(*) FROM ha_events WHERE resolution = 'unresolved'"
+    ).fetchone()[0]
+
+    last_evt = conn.execute(
+        "SELECT id, resolution, occurred_at FROM ha_events"
+        " ORDER BY occurred_at DESC LIMIT 1"
+    ).fetchone()
+    last_event_payload = None
+    if last_evt is not None:
+        last_event_payload = {
+            "event_id": last_evt["id"],
+            "resolution": last_evt["resolution"],
+            "occurred_at": last_evt["occurred_at"],
+        }
+
+    return JSONResponse({
+        "shift": shift_payload,
+        "unresolved_count": unresolved_count,
+        "last_event": last_event_payload,
+    })
+
+
 @router.post("/events/{event_id}/screenshot", dependencies=[Depends(require_api_key)])
 async def upload_screenshot(
     event_id: int,

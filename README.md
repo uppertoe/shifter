@@ -59,64 +59,9 @@ Open `http://127.0.0.1:8765` — no header injection needed. The DB lives at `da
 
 ## Home Assistant integration
 
-Shifter accepts raw presence events and figures out which nanny they belong to using your schedule + open-shift state. HA doesn't need to identify the person.
+Shifter accepts raw presence events on `POST /api/events` (auth: `X-API-Key`) and figures out which nanny they belong to using your schedule + open-shift state. HA doesn't need to identify the person. Optional `POST /api/events/{event_id}/screenshot` attaches an image (e.g. from Frigate).
 
-### Endpoints
-
-```
-POST /api/events                          # JSON event, X-API-Key required
-POST /api/events/{event_id}/screenshot    # multipart image (optional, after event)
-```
-
-### Resolution policy
-
-| State | Result |
-|---|---|
-| No nanny scheduled today AND no open shift | `ignored` (background noise) |
-| Exactly one nanny expected today, none arrived | `arrival` — opens a new (unconfirmed) shift |
-| Exactly one open shift | `departure` — closes that shift |
-| Anything ambiguous (multiple expected, multiple open, etc.) | `unresolved` — shown on dashboard for one-click manual attribution |
-| Same source within `HA_DEBOUNCE_MINUTES` of a previous non-ignored event | `ignored` (debounced) |
-
-### HA snippets
-
-`secrets.yaml`:
-
-```yaml
-shifter_api_key: "<long-random-string-matching-shifter's-API_KEY>"
-```
-
-`configuration.yaml`:
-
-```yaml
-rest_command:
-  shifter_event:
-    url: "http://shifter:8000/api/events"
-    method: POST
-    content_type: "application/json"
-    headers:
-      X-API-Key: !secret shifter_api_key
-    payload: >
-      {"occurred_at": "{{ now().isoformat() }}",
-       "source": "{{ source | default('unknown') }}"}
-```
-
-Then trigger from any automation you like:
-
-```yaml
-automation:
-  - alias: "Front door movement"
-    trigger:
-      - platform: state
-        entity_id: binary_sensor.frigate_front_door_person
-        to: "on"
-    action:
-      - service: rest_command.shifter_event
-        data:
-          source: "frigate-front-door"
-```
-
-You can optionally include `event_type: "arrival"` or `"departure"` in the payload if HA can determine direction (e.g. door sensor + presence direction). Shifter treats it as a strong hint but still uses the schedule to attribute the nanny.
+Full request/response schemas, error codes, resolution policy, debounce semantics, and worked HA snippets (including a one-shot `shell_command` that posts the event and uploads a snapshot only when shifter actually opened or closed a shift) live in **[docs/home-assistant.md](docs/home-assistant.md)**.
 
 ## TimeTagger import
 

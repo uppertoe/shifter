@@ -1,0 +1,9 @@
+{# Concatenated OOB-swap fragments returned by HTMX-mutating shift endpoints
+   so dashboard counts and totals stay in sync after a card is swapped out.
+   Each include is rendered with oob=True which adds hx-swap-oob="outerHTML"
+   to the section's outer element. #}
+{% include "dashboard/_stats.html" %}
+{% include "dashboard/_open_shifts.html" %}
+{% include "dashboard/_unresolved_banner.html" %}
+{% include "dashboard/_pending_shifts.html" %}
+{% include "dashboard/_owed.html" %}

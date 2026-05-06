@@ -270,7 +270,7 @@ def test_delete_shift_actually_deletes(client, conn):
     assert conn.execute("SELECT COUNT(*) FROM expenses WHERE shift_id = ?", (sid,)).fetchone()[0] == 0
 
 
-def test_delete_with_htmx_returns_empty_body(client, conn):
+def test_delete_with_htmx_returns_oob_refresh(client, conn):
     nid = conn.execute("INSERT INTO nannies (name) VALUES ('A')").lastrowid
     sid = conn.execute(
         "INSERT INTO shifts (nanny_id, start_time, source, confirmed,"
@@ -280,7 +280,8 @@ def test_delete_with_htmx_returns_empty_body(client, conn):
     r = client.post(f"/shifts/{sid}/delete",
                      headers={"HX-Request": "true", "Remote-User": "alice"})
     assert r.status_code == 200
-    assert r.text == ""
+    assert 'id="dashboard-owed"' in r.text
+    assert 'hx-swap-oob="outerHTML"' in r.text
     assert conn.execute("SELECT COUNT(*) FROM shifts WHERE id = ?", (sid,)).fetchone()[0] == 0
 
 
@@ -361,7 +362,7 @@ def test_inline_save_with_confirm(client, conn):
         headers={"HX-Request": "true", "Remote-User": "alice"},
     )
     assert r.status_code == 200
-    assert r.text == ""
+    assert 'hx-swap-oob="outerHTML"' in r.text
     row = conn.execute(
         "SELECT start_time, end_time, notes, confirmed FROM shifts WHERE id = ?", (sid,),
     ).fetchone()
@@ -369,6 +370,29 @@ def test_inline_save_with_confirm(client, conn):
     assert row["end_time"].startswith("2026-05-04T17:45:00")
     assert row["notes"] == "Adjusted by hand"
     assert row["confirmed"] == 1
+
+
+def test_oob_refresh_includes_all_dashboard_sections(client, conn):
+    """The OOB fragment that mutation endpoints append must cover every
+    dashboard section that displays shift-derived data, so a delete or
+    confirm keeps totals/counts in sync without a page reload."""
+    nid = conn.execute("INSERT INTO nannies (name) VALUES ('A')").lastrowid
+    conn.execute(
+        "INSERT INTO pay_rates (nanny_id, rate_cents, effective_from)"
+        " VALUES (?, 3500, '2025-01-01')", (nid,),
+    )
+    sid = conn.execute(
+        "INSERT INTO shifts (nanny_id, start_time, source, confirmed,"
+        " created_by, updated_by) VALUES (?, '2026-05-04T07:00:00+10:00',"
+        " 'manual', 1, 'x', 'x')", (nid,),
+    ).lastrowid
+    r = client.post(f"/shifts/{sid}/delete",
+                     headers={"HX-Request": "true", "Remote-User": "alice"})
+    assert r.status_code == 200
+    body = r.text
+    for section_id in ("dashboard-stats", "dashboard-open", "dashboard-pending",
+                         "dashboard-unresolved", "dashboard-owed"):
+        assert f'id="{section_id}"' in body, f"missing OOB fragment for {section_id}"
 
 
 def test_inline_save_without_confirm_keeps_unconfirmed(client, conn):
@@ -417,7 +441,9 @@ def test_close_with_explicit_end_time(client, conn):
                      data={"end_time": "2026-05-04T17:30"},
                      headers={"HX-Request": "true", "Remote-User": "alice"})
     assert r.status_code == 200
-    assert r.text == ""
+    # Response carries OOB-swap fragments so dashboard totals re-render.
+    assert 'hx-swap-oob="outerHTML"' in r.text
+    assert 'id="dashboard-owed"' in r.text
     end = conn.execute("SELECT end_time FROM shifts WHERE id = ?", (sid,)).fetchone()["end_time"]
     assert end.startswith("2026-05-04T17:30:00")
 
@@ -452,7 +478,7 @@ def test_close_without_end_time_uses_now(client, conn):
     assert end is not None
 
 
-def test_confirm_with_htmx_returns_empty_body(client, conn):
+def test_confirm_with_htmx_returns_oob_refresh(client, conn):
     nid = conn.execute("INSERT INTO nannies (name) VALUES ('A')").lastrowid
     sid = conn.execute(
         "INSERT INTO shifts (nanny_id, start_time, source, confirmed,"
@@ -462,7 +488,8 @@ def test_confirm_with_htmx_returns_empty_body(client, conn):
     r = client.post(f"/shifts/{sid}/confirm",
                      headers={"HX-Request": "true", "Remote-User": "alice"})
     assert r.status_code == 200
-    assert r.text == ""
+    assert 'id="dashboard-owed"' in r.text
+    assert 'id="dashboard-stats"' in r.text
     row = conn.execute("SELECT confirmed FROM shifts WHERE id = ?", (sid,)).fetchone()
     assert row["confirmed"] == 1
 

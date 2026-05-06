@@ -44,13 +44,9 @@ def serve_screenshot(
     return FileResponse(target)
 
 
-@router.get("/", response_class=HTMLResponse)
-def index(
-    request: Request,
-    conn=Depends(get_db),
-    settings: Settings = Depends(get_settings),
-    user: str = Depends(current_user),
-):
+def _build_context(conn, settings: Settings, user: str) -> dict:
+    """Compute the data the dashboard needs. Reused for the full page render
+    and for the OOB refresh fragment that mutation endpoints append."""
     tz = settings.zoneinfo
     now = datetime.now(tz)
     today = now.date()
@@ -95,25 +91,42 @@ def index(
         s = pay.unpaid_summary(conn, n["id"], now=now)
         nanny_summaries.append({"nanny": n, "summary": s})
 
+    return {
+        "user": user,
+        "tz": tz,
+        "today": today,
+        "today_iso": today.isoformat(),
+        "today_hours": today_hours,
+        "today_pay_cents": today_pay,
+        "week_start": week_start,
+        "week_hours": week_hours,
+        "week_pay_cents": week_pay,
+        "open_shifts": open_views,
+        "now_local_input": now.strftime("%Y-%m-%dT%H:%M"),
+        "pending_shifts": pending_views,
+        "pending_older_count": pending_older_count,
+        "frigate_base_url": settings.frigate_base_url,
+        "unresolved_count": unresolved_count,
+        "nanny_summaries": nanny_summaries,
+    }
+
+
+def render_oob_refresh(conn, settings: Settings, user: str) -> str:
+    """Render the dynamic dashboard sections wrapped for HTMX out-of-band
+    swap. Mutation endpoints append this to their HTMX response so totals
+    and counts stay in sync after a card vanishes."""
+    ctx = _build_context(conn, settings, user)
+    ctx["oob"] = True
+    return templates.env.get_template("dashboard/_oob_refresh.html").render(ctx)
+
+
+@router.get("/", response_class=HTMLResponse)
+def index(
+    request: Request,
+    conn=Depends(get_db),
+    settings: Settings = Depends(get_settings),
+    user: str = Depends(current_user),
+):
     return templates.TemplateResponse(
-        request,
-        "dashboard.html",
-        {
-            "user": user,
-            "tz": tz,
-            "today": today,
-            "today_iso": today.isoformat(),
-            "today_hours": today_hours,
-            "today_pay_cents": today_pay,
-            "week_start": week_start,
-            "week_hours": week_hours,
-            "week_pay_cents": week_pay,
-            "open_shifts": open_views,
-            "now_local_input": now.strftime("%Y-%m-%dT%H:%M"),
-            "pending_shifts": pending_views,
-            "pending_older_count": pending_older_count,
-            "frigate_base_url": settings.frigate_base_url,
-            "unresolved_count": unresolved_count,
-            "nanny_summaries": nanny_summaries,
-        },
+        request, "dashboard.html", _build_context(conn, settings, user),
     )

@@ -12,6 +12,17 @@ from shifter.main import get_db, templates
 from shifter.money import parse_dollars
 from shifter.time_utils import parse_local_input, to_local_input
 
+
+def _htmx_swap_with_oob(request: Request, conn, settings: Settings, user: str,
+                          card_html: str = "") -> HTMLResponse:
+    """Standard HTMX response for a dashboard-mutating action: empty (or
+    given) main-target HTML, plus OOB-swap fragments for the dashboard's
+    summary sections so totals/counts re-render in place."""
+    # Late import: dashboard imports from main.get_db; avoids any cycle.
+    from shifter.routes.dashboard import render_oob_refresh
+    oob = render_oob_refresh(conn, settings, user)
+    return HTMLResponse(card_html + oob)
+
 router = APIRouter(prefix="/shifts")
 
 
@@ -231,11 +242,12 @@ def delete(
     shift_id: int,
     request: Request,
     conn=Depends(get_db),
+    settings: Settings = Depends(get_settings),
     user: str = Depends(current_user),
 ):
     repos.delete_shift(conn, shift_id)
     if request.headers.get("HX-Request"):
-        return HTMLResponse("")
+        return _htmx_swap_with_oob(request, conn, settings, user)
     return RedirectResponse("/shifts", status_code=status.HTTP_303_SEE_OTHER)
 
 
@@ -261,7 +273,7 @@ def close(
                               "end time must be after start time")
     repos.close_shift(conn, shift_id, end_dt.isoformat(), updated_by=user)
     if request.headers.get("HX-Request"):
-        return HTMLResponse("")
+        return _htmx_swap_with_oob(request, conn, settings, user)
     return RedirectResponse("/shifts", status_code=status.HTTP_303_SEE_OTHER)
 
 
@@ -335,7 +347,7 @@ def inline_save(
     if confirm == "1":
         repos.confirm_shift(conn, shift_id, updated_by=user)
     if request.headers.get("HX-Request"):
-        return HTMLResponse("")
+        return _htmx_swap_with_oob(request, conn, settings, user)
     return RedirectResponse("/", status_code=status.HTTP_303_SEE_OTHER)
 
 
@@ -344,14 +356,16 @@ def confirm(
     shift_id: int,
     request: Request,
     conn=Depends(get_db),
+    settings: Settings = Depends(get_settings),
     user: str = Depends(current_user),
 ):
     repos.confirm_shift(conn, shift_id, updated_by=user)
     # HTMX submission from the dashboard pending-review card: return empty
-    # body so the card is swapped out in place. Plain browser submit (no
-    # HTMX) falls back to the legacy redirect.
+    # body so the card is swapped out in place, plus OOB fragments so totals
+    # and pending-shifts counts re-render. Plain browser submit (no HTMX)
+    # falls back to the legacy redirect.
     if request.headers.get("HX-Request"):
-        return HTMLResponse("")
+        return _htmx_swap_with_oob(request, conn, settings, user)
     return RedirectResponse("/shifts", status_code=status.HTTP_303_SEE_OTHER)
 
 

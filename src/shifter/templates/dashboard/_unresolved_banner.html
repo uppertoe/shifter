@@ -1,0 +1,9 @@
+<section id="dashboard-unresolved"{% if oob %} hx-swap-oob="outerHTML"{% endif %}>
+  {% if unresolved_count %}
+    <article class="banner-warn">
+      <strong>{{ unresolved_count }} unresolved Home Assistant event{{ '' if unresolved_count == 1 else 's' }}</strong>
+      needs manual attribution.
+      <a href="/api/events/unresolved" role="button" class="secondary">Review</a>
+    </article>
+  {% endif %}
+</section>

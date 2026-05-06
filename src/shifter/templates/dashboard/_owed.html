@@ -1,0 +1,41 @@
+<section id="dashboard-owed"{% if oob %} hx-swap-oob="outerHTML"{% endif %}>
+  <h2>Owed</h2>
+  {% if not nanny_summaries %}
+    <article class="empty-state">
+      <h3>Welcome to shifter 👋</h3>
+      <p>Get started in two steps:</p>
+      <ol>
+        <li><a href="/nannies">Add your nanny</a> with their hourly rate.</li>
+        <li><a href="/schedule">Set their usual days</a> on the calendar (or skip and just log shifts manually).</li>
+      </ol>
+      <p><small class="muted">If you have a TimeTagger export, the README has the import command.</small></p>
+    </article>
+  {% else %}
+    <div class="grid">
+      {% for entry in nanny_summaries %}
+        {% set s = entry.summary %}
+        <article class="owed">
+          <header>
+            <strong>{{ entry.nanny.name }}</strong>
+          </header>
+          {% if s.grand_total_cents == 0 %}
+            <p><small class="muted">All paid up.</small></p>
+          {% else %}
+            <p>
+              <span class="big">{{ format_cents(s.grand_total_cents) }}</span><br>
+              <small class="muted">
+                {{ s.shifts|length }} shift{{ '' if s.shifts|length == 1 else 's' }}
+                ({{ format_cents(s.shifts_subtotal_cents) }})
+                {% if s.expenses %}
+                  + {{ s.expenses|length }} expense{{ '' if s.expenses|length == 1 else 's' }}
+                  ({{ format_cents(s.expenses_subtotal_cents) }})
+                {% endif %}
+              </small>
+            </p>
+            <a href="/nannies/{{ entry.nanny.id }}/unpaid" role="button">View &amp; pay</a>
+          {% endif %}
+        </article>
+      {% endfor %}
+    </div>
+  {% endif %}
+</section>

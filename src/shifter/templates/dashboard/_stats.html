@@ -1,0 +1,12 @@
+<div id="dashboard-stats" class="grid"{% if oob %} hx-swap-oob="outerHTML"{% endif %}>
+  <article class="stat">
+    <small class="muted">Today</small>
+    <h3>{{ "%.1f"|format(today_hours) }}h</h3>
+    <p>{{ format_cents(today_pay_cents) }}</p>
+  </article>
+  <article class="stat">
+    <small class="muted">This week (since {{ week_start }})</small>
+    <h3>{{ "%.1f"|format(week_hours) }}h</h3>
+    <p>{{ format_cents(week_pay_cents) }}</p>
+  </article>
+</div>

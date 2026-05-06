@@ -127,6 +127,21 @@
   color: var(--pico-secondary-inverse);
 }
 
+/* Inline flat-line SVG icons (Lucide aesthetic). Sized in em so they
+   scale with the surrounding button/label font, and use currentColor on
+   the stroke so they pick up the parent's text colour automatically.
+   .btn-icon flexes the icon + label so they share a consistent baseline. */
+.icon {
+  width: 1.1em;
+  height: 1.1em;
+  flex: 0 0 auto;
+}
+.btn-icon {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.4rem;
+}
+
 /* Optional date / datetime inputs get a small × clear button alongside,
    so the user doesn't have to backspace day-month-year-hour-minute one
    segment at a time. Wrap the <input> in <span class="input-clearable">

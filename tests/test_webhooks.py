@@ -247,6 +247,97 @@ def test_shifts_list_filter_confirmed_no(client, conn):
     assert f"/shifts/{confirmed_id}/edit" not in r.text
 
 
+def test_pay_single_expense(client, conn):
+    nid = conn.execute("INSERT INTO nannies (name) VALUES ('A')").lastrowid
+    conn.execute("INSERT INTO pay_rates (nanny_id, rate_cents, effective_from)"
+                  " VALUES (?, 3500, '2025-01-01')", (nid,))
+    sid = conn.execute(
+        "INSERT INTO shifts (nanny_id, start_time, end_time, source, confirmed,"
+        " created_by, updated_by) VALUES (?, '2026-05-04T07:00:00+10:00',"
+        " '2026-05-04T17:00:00+10:00', 'manual', 1, 'x', 'x')", (nid,),
+    ).lastrowid
+    eid_keep = conn.execute(
+        "INSERT INTO expenses (shift_id, amount_cents, description)"
+        " VALUES (?, 1450, 'Lunch')", (sid,),
+    ).lastrowid
+    eid_pay = conn.execute(
+        "INSERT INTO expenses (shift_id, amount_cents, description)"
+        " VALUES (?, 800, 'Taxi')", (sid,),
+    ).lastrowid
+    r = client.post(
+        f"/nannies/{nid}/expenses/{eid_pay}/pay",
+        data={"paid_on": "2026-05-06"},
+        headers={"Remote-User": "alice"},
+        follow_redirects=False,
+    )
+    assert r.status_code == 303
+    rows = {e["id"]: e["paid_on"] for e in conn.execute(
+        "SELECT id, paid_on FROM expenses WHERE shift_id = ?", (sid,)).fetchall()}
+    assert rows[eid_pay] == "2026-05-06"
+    assert rows[eid_keep] is None  # other expense untouched
+
+
+def test_pay_single_expense_404_for_other_nanny(client, conn):
+    """Can't pay an expense via the wrong nanny's URL."""
+    n1 = conn.execute("INSERT INTO nannies (name) VALUES ('A')").lastrowid
+    n2 = conn.execute("INSERT INTO nannies (name) VALUES ('B')").lastrowid
+    sid = conn.execute(
+        "INSERT INTO shifts (nanny_id, start_time, source, confirmed,"
+        " created_by, updated_by) VALUES (?, '2026-05-04T07:00:00+10:00',"
+        " 'manual', 1, 'x', 'x')", (n1,),
+    ).lastrowid
+    eid = conn.execute(
+        "INSERT INTO expenses (shift_id, amount_cents, description)"
+        " VALUES (?, 500, 'snack')", (sid,),
+    ).lastrowid
+    r = client.post(
+        f"/nannies/{n2}/expenses/{eid}/pay",
+        data={"paid_on": "2026-05-06"},
+        headers={"Remote-User": "alice"},
+        follow_redirects=False,
+    )
+    assert r.status_code == 404
+
+
+def test_pay_all_expenses_for_nanny(client, conn):
+    """Bulk pays all unpaid expenses; leaves shifts alone."""
+    nid = conn.execute("INSERT INTO nannies (name) VALUES ('A')").lastrowid
+    sid = conn.execute(
+        "INSERT INTO shifts (nanny_id, start_time, end_time, source, confirmed,"
+        " created_by, updated_by) VALUES (?, '2026-05-04T07:00:00+10:00',"
+        " '2026-05-04T17:00:00+10:00', 'manual', 1, 'x', 'x')", (nid,),
+    ).lastrowid
+    for amount, desc in [(500, "snack"), (800, "taxi"), (1200, "lunch")]:
+        conn.execute("INSERT INTO expenses (shift_id, amount_cents, description)"
+                      " VALUES (?, ?, ?)", (sid, amount, desc))
+    r = client.post(
+        f"/nannies/{nid}/expenses/pay-all",
+        data={"paid_on": "2026-05-06"},
+        headers={"Remote-User": "alice"},
+        follow_redirects=False,
+    )
+    assert r.status_code == 303
+    paid_count = conn.execute(
+        "SELECT COUNT(*) FROM expenses WHERE shift_id = ? AND paid_on IS NOT NULL",
+        (sid,),
+    ).fetchone()[0]
+    assert paid_count == 3
+    # Shift NOT marked paid
+    shift_paid = conn.execute("SELECT paid_on FROM shifts WHERE id = ?", (sid,)).fetchone()["paid_on"]
+    assert shift_paid is None
+
+
+def test_pay_all_expenses_handles_zero_unpaid(client, conn):
+    nid = conn.execute("INSERT INTO nannies (name) VALUES ('A')").lastrowid
+    r = client.post(
+        f"/nannies/{nid}/expenses/pay-all",
+        data={"paid_on": "2026-05-06"},
+        headers={"Remote-User": "alice"},
+        follow_redirects=False,
+    )
+    assert r.status_code == 303  # no-op redirect, no error
+
+
 def test_delete_shift_actually_deletes(client, conn):
     """Regression: the Delete form on the edit page used to be nested inside
     the Save form, which is invalid HTML — browsers silently submitted to

@@ -200,6 +200,56 @@ def pay_all(
     return RedirectResponse(f"/nannies/{nanny_id}/unpaid", status_code=status.HTTP_303_SEE_OTHER)
 
 
+@router.post("/{nanny_id}/expenses/pay-all")
+def pay_all_expenses(
+    nanny_id: int,
+    paid_on: str = Form(...),
+    conn=Depends(get_db),
+    user: str = Depends(current_user),
+):
+    """Bulk-pay every unpaid expense for this nanny — leaves shifts untouched."""
+    nanny = repos.get_nanny(conn, nanny_id)
+    if nanny is None:
+        raise HTTPException(status.HTTP_404_NOT_FOUND)
+    try:
+        paid_date = date.fromisoformat(paid_on)
+    except ValueError as e:
+        raise HTTPException(status.HTTP_400_BAD_REQUEST, str(e))
+    summary = pay.unpaid_summary(conn, nanny_id)
+    expense_ids = [e.expense_id for e in summary.expenses]
+    if expense_ids:
+        repos.mark_expenses_paid(conn, expense_ids, paid_date)
+    from fastapi.responses import RedirectResponse
+    return RedirectResponse(f"/nannies/{nanny_id}/unpaid",
+                              status_code=status.HTTP_303_SEE_OTHER)
+
+
+@router.post("/{nanny_id}/expenses/{expense_id}/pay")
+def pay_expense(
+    nanny_id: int,
+    expense_id: int,
+    paid_on: str = Form(...),
+    conn=Depends(get_db),
+    user: str = Depends(current_user),
+):
+    """Mark a single expense paid."""
+    expense = repos.get_expense(conn, expense_id)
+    if expense is None or expense["shift_id"] is None:
+        raise HTTPException(status.HTTP_404_NOT_FOUND)
+    # Sanity check: the expense actually belongs to this nanny via its shift.
+    shift = repos.get_shift(conn, expense["shift_id"])
+    if shift is None or shift["nanny_id"] != nanny_id:
+        raise HTTPException(status.HTTP_404_NOT_FOUND)
+    try:
+        paid_date = date.fromisoformat(paid_on)
+    except ValueError as e:
+        raise HTTPException(status.HTTP_400_BAD_REQUEST, str(e))
+    repos.mark_expenses_paid(conn, [expense_id], paid_date)
+    from fastapi.responses import RedirectResponse
+    return RedirectResponse(f"/nannies/{nanny_id}/unpaid",
+                              status_code=status.HTTP_303_SEE_OTHER)
+
+
 @router.post("/{nanny_id}/rates/{rate_id}/delete", response_class=HTMLResponse)
 def delete_rate(
     nanny_id: int,

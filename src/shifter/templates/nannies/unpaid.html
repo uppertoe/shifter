@@ -48,7 +48,7 @@
   {% if summary.expenses %}
     <figure>
     <table>
-      <thead><tr><th>Shift date</th><th>Description</th><th>Amount</th></tr></thead>
+      <thead><tr><th>Shift date</th><th>Description</th><th>Amount</th><th></th></tr></thead>
       <tbody>
         {% for e in summary.expenses %}
           <tr>
@@ -58,11 +58,36 @@
               {% if e.pending_review %}<small class="pill pending">review</small>{% endif %}
             </td>
             <td>{{ format_cents(e.amount_cents) }}</td>
+            <td>
+              <details class="confirm">
+                <summary class="confirm-trigger">Paid</summary>
+                <form method="post" action="/nannies/{{ nanny.id }}/expenses/{{ e.expense_id }}/pay">
+                  <fieldset role="group">
+                    <input type="date" name="paid_on" value="{{ today_iso }}" required>
+                    <button type="submit">Confirm paid</button>
+                  </fieldset>
+                </form>
+              </details>
+            </td>
           </tr>
         {% endfor %}
         <tr>
           <th colspan="2" style="text-align:right">Subtotal</th>
           <th>{{ format_cents(summary.expenses_subtotal_cents) }}</th>
+          <th>
+            <details class="confirm">
+              <summary class="confirm-trigger">Mark all expenses paid</summary>
+              <form method="post" action="/nannies/{{ nanny.id }}/expenses/pay-all">
+                <fieldset role="group">
+                  <input type="date" name="paid_on" value="{{ today_iso }}" required>
+                  <button type="submit">
+                    Pay {{ summary.expenses|length }} expense{{ '' if summary.expenses|length == 1 else 's' }}
+                    ({{ format_cents(summary.expenses_subtotal_cents) }})
+                  </button>
+                </fieldset>
+              </form>
+            </details>
+          </th>
         </tr>
       </tbody>
     </figure>

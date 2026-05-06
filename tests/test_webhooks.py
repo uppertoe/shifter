@@ -247,6 +247,46 @@ def test_shifts_list_filter_confirmed_no(client, conn):
     assert f"/shifts/{confirmed_id}/edit" not in r.text
 
 
+def test_delete_shift_actually_deletes(client, conn):
+    """Regression: the Delete form on the edit page used to be nested inside
+    the Save form, which is invalid HTML — browsers silently submitted to
+    the outer form's action and the delete never ran."""
+    nid = conn.execute("INSERT INTO nannies (name) VALUES ('A')").lastrowid
+    sid = conn.execute(
+        "INSERT INTO shifts (nanny_id, start_time, source, confirmed,"
+        " created_by, updated_by) VALUES (?, '2026-05-04T07:00:00+10:00',"
+        " 'manual', 1, 'x', 'x')", (nid,),
+    ).lastrowid
+    conn.execute(
+        "INSERT INTO expenses (shift_id, amount_cents, description)"
+        " VALUES (?, 100, 'lunch')", (sid,),
+    )
+    r = client.post(f"/shifts/{sid}/delete",
+                     headers={"Remote-User": "alice"},
+                     follow_redirects=False)
+    assert r.status_code == 303
+    assert conn.execute("SELECT COUNT(*) FROM shifts WHERE id = ?", (sid,)).fetchone()[0] == 0
+    # cascade: expenses gone too
+    assert conn.execute("SELECT COUNT(*) FROM expenses WHERE shift_id = ?", (sid,)).fetchone()[0] == 0
+
+
+def test_edit_page_delete_form_is_not_nested(client, conn):
+    """The Delete form must live outside the outer Save form."""
+    nid = conn.execute("INSERT INTO nannies (name) VALUES ('A')").lastrowid
+    sid = conn.execute(
+        "INSERT INTO shifts (nanny_id, start_time, source, confirmed,"
+        " created_by, updated_by) VALUES (?, '2026-05-04T07:00:00+10:00',"
+        " 'manual', 1, 'x', 'x')", (nid,),
+    ).lastrowid
+    body = client.get(f"/shifts/{sid}/edit",
+                       headers={"Remote-User": "alice"}).text
+    # The delete form's action must appear AFTER the outer form's </form>.
+    save_close = body.find("</form>")
+    delete_action = body.find(f'action="/shifts/{sid}/delete"')
+    assert save_close != -1 and delete_action != -1
+    assert delete_action > save_close, "delete form must not be nested in save form"
+
+
 def test_inline_editor_renders_with_expenses(client, conn):
     nid = conn.execute("INSERT INTO nannies (name) VALUES ('A')").lastrowid
     sid = conn.execute(

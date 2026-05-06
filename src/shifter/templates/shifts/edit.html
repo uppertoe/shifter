@@ -46,16 +46,21 @@
 
   <div class="form-actions">
     <button type="submit">Save</button>
-    {% if shift %}
-      <details class="confirm">
-        <summary class="confirm-trigger secondary outline">Delete shift</summary>
-        <form method="post" action="/shifts/{{ shift.id }}/delete">
-          <button type="submit" class="contrast">Confirm delete</button>
-        </form>
-      </details>
-    {% endif %}
   </div>
 </form>
+
+{% if shift %}
+  {# Delete lives in its own form because nested <form> is invalid HTML and
+     browsers silently fall back to the outer form's action. #}
+  <div class="form-actions">
+    <details class="confirm">
+      <summary class="confirm-trigger secondary outline">Delete shift</summary>
+      <form method="post" action="/shifts/{{ shift.id }}/delete">
+        <button type="submit" class="contrast">Confirm delete</button>
+      </form>
+    </details>
+  </div>
+{% endif %}
 
 {% if shift %}
   <hr>

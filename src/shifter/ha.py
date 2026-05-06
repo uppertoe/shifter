@@ -1,22 +1,32 @@
 """Home Assistant event resolution.
 
-HA sends raw, unattributed presence events. We figure out which nanny it
-belongs to by looking at the schedule (who was expected today?) and the
-current state (any shifts open?). Output is a ``ha_events`` row with a
-``resolution`` of arrival / departure / unresolved / ignored.
+HA blindly fires presence events; the schedule + open-shift state filters
+the noise. The resolver maps each event onto the shift state machine:
 
-Resolution rules:
+    A: Booked, awaiting arrival      (expected_shifts row, no shifts row yet)
+    B: Open & fresh, awaiting departure  (shifts row, end_time NULL, < 16h old)
+    C: Open & stale, resolution required (shifts row, end_time NULL, ≥ 16h old
+                                          OR another shift opened after it)
+    D: Closed, unconfirmed           (shifts row, end_time set, confirmed=0)
+    E: Confirmed                     (shifts row, end_time set, confirmed=1)
 
-* ``event_type_hint`` from HA, if present, is treated as authoritative for
-  *direction* — but we still need the schedule/state to attribute a nanny.
-* Arrival: pick the nanny who is expected today and doesn't already have an
-  open shift. If multiple or none → unresolved.
-* Departure: pick the (single) currently-open shift. If multiple or none →
-  unresolved.
-* No hint: infer from state. 0 open shifts → arrival logic; 1 open and no
-  other "expected but not arrived" nanny → departure; otherwise unresolved.
-* Debounce: if a non-ignored event from the same ``source`` arrived within
-  ``HA_DEBOUNCE_MINUTES``, the new one is recorded but resolved as ``ignored``.
+Events either *consume* a shift's awaiting slot or are *ignored*:
+
+* Arrival event matches state A → consume → creates a state-B shift.
+* Departure event matches a unique state-B shift → consume → closes to D.
+* No-hint event: try arrival first, then fresh-departure.
+* Anything else (no candidate, ambiguous candidates, stale shift, already-
+  arrived, no schedule) → ``ignored``. There is no longer an "unresolved
+  events" queue under this model — the schedule does the filtering, and
+  shifts (states C and D) are the unit that needs human attention.
+
+Every HA-driven close flips ``confirmed`` back to 0 on the shift, because
+auto-filled end times are a convenience that always need human review
+against the screenshot before they count. ALL shifts ultimately need
+explicit confirmation; HA never confirms.
+
+Debounce: if a non-ignored event from the same ``source`` arrived within
+``HA_DEBOUNCE_MINUTES``, the new one is recorded but resolved as ``ignored``.
 """
 
 from __future__ import annotations
@@ -58,12 +68,14 @@ def _is_debounced(
 def is_open_shift_stale(
     conn: sqlite3.Connection, shift, *, as_of: datetime, settings: Settings
 ) -> bool:
-    """An open shift is stale and no longer accepts auto-attributed events if:
+    """An open shift is "stale" (state C) when we've clearly missed the close
+    event for it:
     (a) another shift has started after it (the next bucket has begun), or
-    (c) it has been open for longer than ``shift_stale_hours`` (default 16h).
+    (b) it has been open for longer than ``shift_stale_hours`` (default 16h).
 
-    Stale shifts stay open in the DB and are surfaced on the dashboard for
-    manual close/edit; they're just invisible to the HA resolver.
+    Stale shifts no longer accept HA events — that's the whole point of
+    flagging them stale. They're surfaced on the dashboard for the human
+    to set an end time (or delete) manually.
     """
     start = datetime.fromisoformat(shift["start_time"])
     if (as_of - start).total_seconds() > settings.shift_stale_hours * 3600:
@@ -78,6 +90,8 @@ def is_open_shift_stale(
 def _fresh_open_shifts(
     conn: sqlite3.Connection, *, as_of: datetime, settings: Settings
 ) -> list:
+    """Open shifts in state B (not yet stale) — the only ones that can
+    consume HA events."""
     return [s for s in repos.list_shifts(conn, open_only=True)
             if not is_open_shift_stale(conn, s, as_of=as_of, settings=settings)]
 
@@ -85,10 +99,9 @@ def _fresh_open_shifts(
 def _has_activity_today(
     conn: sqlite3.Connection, occurred_at: datetime, settings: Settings
 ) -> bool:
-    """Is there any expected slot or *fresh* open shift the event could plausibly
-    belong to? Stale open shifts don't count — they'd otherwise let stray
-    morning events close yesterday's never-clocked-out shift.
-    """
+    """Is there any expected slot or fresh open shift the event could
+    plausibly belong to? Stale open shifts don't count — they no longer
+    accept events; events for them are background noise."""
     if _fresh_open_shifts(conn, as_of=occurred_at, settings=settings):
         return True
     return bool(schedule.expected_on_date(conn, occurred_at.date(), include_cancelled=False))
@@ -117,6 +130,8 @@ def _try_arrival(
 def _try_departure(
     conn: sqlite3.Connection, *, as_of: datetime, settings: Settings
 ):
+    """Find the unique fresh (state B) open shift this departure can consume.
+    Returns None on zero or multiple fresh open shifts (caller ignores)."""
     fresh = _fresh_open_shifts(conn, as_of=as_of, settings=settings)
     if len(fresh) == 1:
         return fresh[0]
@@ -226,6 +241,13 @@ def _create_departure(
 ) -> EventResult:
     end = ceil_15min(occurred_at)
     repos.close_shift(conn, open_shift_row["id"], end.isoformat(), updated_by="ha-webhook")
+    # Force re-confirmation: an HA-driven close is a guess (especially the
+    # stale-cleanup case where the end time is just "whenever the cleanup
+    # event arrived"). Surface it on the dashboard for human review.
+    conn.execute(
+        "UPDATE shifts SET confirmed = 0 WHERE id = ?",
+        (open_shift_row["id"],),
+    )
     eid = _insert_event(
         conn,
         occurred_at=occurred_at, source=source, event_type_hint=event_type_hint,
@@ -268,12 +290,12 @@ def process_event(
         return EventResult(eid, resolution, None, None, note)
 
     # 2. Background-noise check: if nobody is scheduled today and no fresh
-    # shift is open, an event almost certainly isn't a nanny — record as
-    # ignored rather than burdening the unresolved queue.
+    # shift is open, the event has nothing to match — drop it.
     if not _has_activity_today(conn, occurred_at, settings):
-        return _record("ignored", "no nanny scheduled today and no open shifts")
+        return _record("ignored", "no nanny scheduled today and no fresh open shift")
 
-    # 3. Hint-driven resolution
+    # 3. Hint-driven resolution. Misses are ignored — there's no longer an
+    # unresolved-events queue under the shift-state model.
     if event_type_hint == "arrival":
         nanny_id, exp_id = _try_arrival(conn, occurred_at, settings)
         if nanny_id:
@@ -281,7 +303,7 @@ def process_event(
                 conn, nanny_id=nanny_id, expected_shift_id=exp_id,
                 occurred_at=occurred_at, source=source, event_type_hint=event_type_hint,
             )
-        return _record("unresolved", "hint=arrival but 0 or >1 candidate nannies on the schedule")
+        return _record("ignored", "hint=arrival but 0 or >1 candidate nannies on the schedule")
 
     if event_type_hint == "departure":
         open_shift = _try_departure(conn, as_of=occurred_at, settings=settings)
@@ -290,31 +312,31 @@ def process_event(
                 conn, open_shift_row=open_shift,
                 occurred_at=occurred_at, source=source, event_type_hint=event_type_hint,
             )
-        return _record("unresolved", "hint=departure but 0 or >1 fresh open shifts")
+        return _record("ignored", "hint=departure but 0 or >1 fresh open shifts")
 
-    # 4. No hint — infer from state. Stale open shifts are excluded so a stray
-    # morning event can't accidentally close yesterday's never-clocked-out
-    # shift; that one stays open for manual cleanup. When an expected nanny
-    # hasn't arrived yet today, we prefer the arrival interpretation — once
-    # her new shift exists, the previous one becomes stale by rule (a) for
-    # all future events.
-    fresh_open = _fresh_open_shifts(conn, as_of=occurred_at, settings=settings)
+    # 4. No hint — infer from state. Prefer arrival (an expected nanny who
+    # hasn't clocked in yet); else close the unique fresh open shift.
+    # Stale shifts are intentionally invisible to the resolver — they need
+    # human resolution.
     arrival_nanny_id, exp_id = _try_arrival(conn, occurred_at, settings)
-
     if arrival_nanny_id is not None:
         return _create_arrival(
             conn, nanny_id=arrival_nanny_id, expected_shift_id=exp_id,
             occurred_at=occurred_at, source=source, event_type_hint=event_type_hint,
         )
-    if len(fresh_open) == 1:
+
+    open_shift = _try_departure(conn, as_of=occurred_at, settings=settings)
+    if open_shift is not None:
         return _create_departure(
-            conn, open_shift_row=fresh_open[0],
+            conn, open_shift_row=open_shift,
             occurred_at=occurred_at, source=source, event_type_hint=event_type_hint,
         )
 
+    fresh_open = _fresh_open_shifts(conn, as_of=occurred_at, settings=settings)
     return _record(
-        "unresolved",
-        f"ambiguous: {len(fresh_open)} fresh open shift(s); no clear arrival candidate",
+        "ignored",
+        f"no clear match: {len(fresh_open)} fresh open shift(s),"
+        " no arrival candidate",
     )
 
 

@@ -164,6 +164,9 @@ def create(
             request, "shifts/edit.html", {"user": user, **ctx}, status_code=400
         )
 
+    # All shifts start unconfirmed: the explicit confirm step is the human
+    # signoff that the times (whether typed in or auto-filled by HA) are
+    # right. Manual creation is no exception.
     repos.create_shift(
         conn,
         nanny_id=nanny_id,
@@ -173,10 +176,28 @@ def create(
         flat_rate_cents=flat_rate_cents,
         notes=_none_if_blank(notes),
         source="manual",
-        confirmed=True,
+        confirmed=False,
         created_by=user,
     )
     return RedirectResponse("/shifts", status_code=status.HTTP_303_SEE_OTHER)
+
+
+@router.post("/confirm-batch", response_class=HTMLResponse)
+def confirm_batch(
+    request: Request,
+    shift_ids: list[int] = Form(...),
+    conn=Depends(get_db),
+    settings: Settings = Depends(get_settings),
+    user: str = Depends(current_user),
+):
+    """Confirm a list of shifts in one click — bound to the explicit IDs
+    rendered on the dashboard so older pending shifts off-screen aren't
+    swept up unintentionally. Defined before the ``/{shift_id}`` routes so
+    the literal ``confirm-batch`` path doesn't get parsed as an int id."""
+    repos.confirm_shifts(conn, shift_ids, updated_by=user)
+    if request.headers.get("HX-Request"):
+        return _htmx_swap_with_oob(request, conn, settings, user)
+    return RedirectResponse("/", status_code=status.HTTP_303_SEE_OTHER)
 
 
 @router.get("/{shift_id}/edit", response_class=HTMLResponse)

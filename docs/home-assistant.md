@@ -85,11 +85,21 @@ bypassed entirely — never run dev mode in production.
 
 ### What "resolution" means for the caller
 
-- `arrival` / `departure` — shifter opened or closed a shift. You can stop here.
-- `unresolved` — the event was recorded but no shift was touched. It will appear
-  in the unresolved queue for human attribution. Worth attaching a screenshot.
-- `ignored` — recorded but actively suppressed (debounced or background noise).
-  Don't bother with a screenshot.
+- `arrival` — shifter opened a new shift from a booked schedule slot.
+- `departure` — shifter closed an open fresh shift.
+- `ignored` — the event didn't match any awaiting shift slot (no booking,
+  ambiguous nanny, no open shift, stale shift, or duplicate within the
+  debounce window). It's recorded for audit but nothing was touched.
+
+There is **no `unresolved` resolution under normal operation** — the
+shift-state model resolves matches deterministically and ignores the rest.
+(The string `unresolved` may still appear for legacy DB rows from before
+the model change; the `/api/events/unresolved` page lets a human attribute
+those one-off.)
+
+In all `arrival` and `departure` cases, the resulting shift is left
+`confirmed=0` on shifter's side and shows up in the dashboard's pending-
+review queue. HA never confirms a shift; only humans do.
 
 ## `POST /api/events/{event_id}/screenshot`
 
@@ -211,35 +221,58 @@ entities:
 
 ## Resolution policy
 
-What shifter does after debounce:
+Shifter treats *shifts* — not events — as the unit that needs resolving.
+Each shift moves through a small state machine:
 
-| State | Result |
-|---|---|
-| No nanny scheduled today **and** no fresh open shift | `ignored` — background noise |
-| One expected nanny hasn't arrived yet | `arrival` — opens an unconfirmed shift (preferred even if a stale shift is still open) |
-| Exactly one fresh open shift, no expected arrival pending | `departure` — closes that shift |
-| Anything ambiguous (multiple expected, multiple fresh open, etc.) | `unresolved` — surfaced in the dashboard for one-click manual attribution |
+| # | State | Definition | What HA events do |
+|---|---|---|---|
+| **A** | Booked, awaiting arrival | `expected_shifts` row exists for the day; no `shifts` row yet | An **arrival** event consumes the slot and creates a state-B shift. |
+| **B** | Open & fresh, awaiting departure | `shifts` row, `end_time IS NULL`, opened **< `SHIFT_STALE_HOURS`** ago and no later shift exists | A **departure** event closes it to state D. |
+| **C** | Open & stale | `shifts` row, `end_time IS NULL`, **≥ `SHIFT_STALE_HOURS`** old or another shift was opened after it | **Nothing** — stale shifts no longer accept events. The human resolves them on the dashboard. |
+| **D** | Closed, unconfirmed | both times set, `confirmed=0` | n/a |
+| **E** | Confirmed | both times set, `confirmed=1` | n/a |
 
-### Stale open shifts
+`SHIFT_STALE_HOURS` defaults to 16h. Anything above that threshold (or
+preceded by a newer shift) is the system's "we missed an event" signal:
+we stop trying to auto-resolve it and surface it for a human.
 
-An open shift that was never clocked-out is "stale" and ignored by the
-resolver if either:
+### What gets ignored
 
-- another shift has been started after it (the next bucket has begun), or
-- it's been open for longer than `SHIFT_STALE_HOURS` (default 16h).
+Anything that doesn't match a shift in state A or B. In particular:
 
-Stale shifts stay open in the database and are flagged on the dashboard for
-manual close/edit. This stops a stray morning event (e.g. a parent leaving
-for work) from accidentally closing yesterday's never-clocked-out shift.
+- An arrival event when no nanny is booked today, or when the booked
+  nanny already has a fresh shift open, or when ≥2 nannies are booked
+  and the resolver can't tell which.
+- A departure event when no fresh open shift exists, or when ≥2 fresh
+  open shifts exist (ambiguous which to close).
+- Any event whose only candidate is a stale shift (state C).
+- Duplicate events from the same `source` within `HA_DEBOUNCE_MINUTES`.
 
-The 16h default fits a long overnight shift (e.g. 7pm Mon → 9am Tue) without
-prematurely staling it. Bump `SHIFT_STALE_HOURS` if you have a nanny who
-genuinely works longer than that.
+These are recorded with `resolution=ignored` and a note explaining why,
+so you can audit them with SQL — but no shift state changes.
 
-If you pass `event_type=arrival` or `departure`, shifter still resolves the
-*nanny* via the schedule, but it will only attempt the matching transition. If
-that transition is ambiguous (e.g. `arrival` but two nannies are due and neither
-has clocked in), the event becomes `unresolved`.
+### All HA-set times need human confirmation
+
+The auto-fill from HA events is a *convenience*, not a source of truth.
+Whenever the resolver opens or closes a shift, that shift sits in state D
+(`confirmed=0`) on the dashboard until a human reviews the start/end times
+against the screenshot and clicks Confirm. Any subsequent edit drops the
+shift back to D. **HA never produces a confirmed shift.**
+
+### Re-opening a shift
+
+Editing a closed shift and **blanking the End field** writes `end_time=NULL`,
+which puts the shift back in state B (or directly into C if it's already
+old). Useful when the HA close was on the wrong shift, or the wrong day.
+Both the standalone shift edit page and the dashboard inline editor support
+this.
+
+### Hints
+
+If you pass `event_type=arrival` or `departure`, shifter trusts the
+direction but still uses the schedule + open-shift state to attribute a
+nanny. Mismatches (e.g. `arrival` hint while no nanny is in state A) are
+ignored, not unresolved.
 
 ## Debounce
 

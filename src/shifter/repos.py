@@ -195,6 +195,22 @@ def confirm_shift(conn: sqlite3.Connection, shift_id: int, *, updated_by: str) -
     )
 
 
+def confirm_shifts(
+    conn: sqlite3.Connection, shift_ids: list[int], *, updated_by: str
+) -> int:
+    """Confirm a batch of shifts. Returns the number of rows actually flipped
+    (already-confirmed ones are skipped)."""
+    if not shift_ids:
+        return 0
+    placeholders = ",".join("?" * len(shift_ids))
+    cur = conn.execute(
+        f"UPDATE shifts SET confirmed=1, updated_by=?, updated_at=datetime('now')"
+        f" WHERE confirmed=0 AND id IN ({placeholders})",
+        [updated_by, *shift_ids],
+    )
+    return cur.rowcount or 0
+
+
 def mark_shifts_paid(
     conn: sqlite3.Connection,
     shift_ids: list[int],

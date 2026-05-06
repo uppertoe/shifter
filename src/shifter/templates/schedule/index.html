@@ -112,7 +112,12 @@
       </div>
       <div class="grid">
         <label>Active from   <input type="date" name="active_from"  value="{{ today.isoformat() }}" required></label>
-        <label>Active until  <input type="date" name="active_until" placeholder="(open-ended)"></label>
+        <label>Active until
+          <span class="input-clearable">
+            <input type="date" name="active_until" placeholder="(open-ended)">
+            <button type="button" class="input-clear-btn" aria-label="Clear">&times;</button>
+          </span>
+        </label>
       </div>
       <label>Notes <input name="notes" placeholder="optional"></label>
       <button type="submit">Add pattern</button>

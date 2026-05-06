@@ -25,6 +25,19 @@
         }, 1100);
       });
     });
+
+    // Clear-button next to optional date / datetime inputs. Markup is
+    //   <span class="input-clearable"><input ...><button class="input-clear-btn">×</button></span>
+    // Event-delegated so HTMX-swapped fragments work without re-binding.
+    document.addEventListener("click", function (e) {
+      var btn = e.target.closest(".input-clear-btn");
+      if (!btn) return;
+      e.preventDefault();
+      var input = btn.parentElement && btn.parentElement.querySelector("input");
+      if (!input) return;
+      input.value = "";
+      input.dispatchEvent(new Event("change", { bubbles: true }));
+    });
   </script>
 </head>
 <body>

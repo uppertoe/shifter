@@ -63,16 +63,18 @@
         <td>{{ format_cents(v.computed.pay_cents) }}</td>
         <td>{% if v.expenses_total_cents %}{{ format_cents(v.expenses_total_cents) }}{% else %}—{% endif %}</td>
         <td>
-          {% if not s.confirmed %}<small class="pill pending">pending</small>{% endif %}
-          {% if s.paid_on %}<small class="pill paid">paid {{ s.paid_on }}</small>
-          {% else %}<small class="pill unpaid">unpaid</small>{% endif %}
-          {% if not s.end_time %}<small class="pill open">open</small>{% endif %}
+          <div class="pill-group">
+            {% if not s.confirmed %}<small class="pill pending">pending</small>{% endif %}
+            {% if s.paid_on %}<small class="pill paid">paid {{ s.paid_on }}</small>
+            {% else %}<small class="pill unpaid">unpaid</small>{% endif %}
+            {% if not s.end_time %}<small class="pill open">open</small>{% endif %}
+          </div>
         </td>
-        <td>
+        <td class="row-actions-cell">
           <div class="row-actions">
             {% if s.end_time and not s.paid_on %}
               <details class="confirm">
-                <summary class="confirm-trigger">Paid</summary>
+                <summary class="confirm-trigger secondary outline">Mark paid</summary>
                 <form method="post" action="/shifts/{{ s.id }}/pay">
                   <fieldset role="group">
                     <input type="date" name="paid_on" value="{{ today_iso }}" required>

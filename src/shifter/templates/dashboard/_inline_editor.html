@@ -17,7 +17,10 @@
         <input type="datetime-local" name="start_local" value="{{ start_local }}" required>
       </label>
       <label>End <small class="muted">(blank = leave open)</small>
-        <input type="datetime-local" name="end_local" value="{{ end_local }}">
+        <span class="input-clearable">
+          <input type="datetime-local" name="end_local" value="{{ end_local }}">
+          <button type="button" class="input-clear-btn" aria-label="Clear end time">&times;</button>
+        </span>
       </label>
     </div>
     <label>Notes

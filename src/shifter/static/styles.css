@@ -79,18 +79,84 @@
 .filter-bar .open-toggle input { margin: 0; }
 
 .row-pending td:first-child { border-left: 3px solid var(--pico-primary); }
-.row-actions { display: flex; gap: 0.4rem; align-items: center; flex-wrap: wrap; }
-.row-actions a, .row-actions button { margin: 0; }
-.row-actions details.confirm summary { padding: 0.4rem 0.7rem; }
+
+/* Status badges in the shifts table sit in their own flex container so
+   row height is constant regardless of how many badges apply. */
+.pill-group {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.3rem;
+  align-items: center;
+}
+
+/* Action column: Edit and Mark-paid must be the same visual size so rows
+   don't grow/shrink based on which actions are available. The
+   <details>-based "Mark paid" inline confirm and the <a role="button">
+   Edit link both pass through the row-actions normaliser below. */
+.row-actions-cell { white-space: nowrap; }
+.row-actions {
+  display: inline-flex;
+  gap: 0.4rem;
+  align-items: center;
+  flex-wrap: nowrap;
+}
+.row-actions > * { margin: 0; }
+.row-actions a[role="button"],
+.row-actions button,
+.row-actions details.confirm > summary {
+  height: 2.25rem;
+  padding: 0 0.85rem;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 0.875rem;
+  line-height: 1;
+  white-space: nowrap;
+  box-sizing: border-box;
+}
 
 .pill {
-  display: inline-block;
-  padding: 0.05rem 0.45rem;
+  display: inline-flex;
+  align-items: center;
+  padding: 0.18rem 0.55rem;
   border-radius: 999px;
-  font-size: 0.7rem;
-  margin-right: 0.25rem;
+  font-size: 0.72rem;
+  line-height: 1.2;
+  font-weight: 500;
   background: var(--pico-secondary-background);
   color: var(--pico-secondary-inverse);
+}
+
+/* Optional date / datetime inputs get a small × clear button alongside,
+   so the user doesn't have to backspace day-month-year-hour-minute one
+   segment at a time. Wrap the <input> in <span class="input-clearable">
+   and add a sibling <button class="input-clear-btn">×</button>. */
+.input-clearable {
+  display: flex;
+  align-items: stretch;
+  gap: 0.25rem;
+  width: 100%;
+}
+.input-clearable input {
+  flex: 1 1 auto;
+  min-width: 0;
+  margin-bottom: 0;
+}
+.input-clear-btn {
+  flex: 0 0 auto;
+  width: auto;
+  margin: 0;
+  padding: 0 0.7rem;
+  font-size: 1rem;
+  line-height: 1;
+  background: var(--pico-secondary-background);
+  color: var(--pico-secondary-inverse);
+  border: 1px solid var(--pico-secondary-border);
+  border-radius: var(--pico-border-radius);
+  cursor: pointer;
+}
+.input-clear-btn:hover {
+  filter: brightness(0.95);
 }
 .pill.paid    { background: #2e7d32; color: #fff; }
 .pill.unpaid  { background: #b88200; color: #fff; }
@@ -136,6 +202,23 @@ main > section:first-child { margin-block-start: 0; }
 .grand-total header { display: flex; justify-content: space-between; align-items: center; padding: 0; margin-bottom: 1rem; background: none; border: none; }
 .grand-total .big { font-size: 1.6rem; font-weight: 600; }
 .grand-total fieldset { margin-bottom: 0; }
+
+/* Section header with an inline action (e.g. "Confirm all N" beside the
+   pending-review heading). */
+.pending-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 1rem;
+  flex-wrap: wrap;
+  margin: 0 0 0.5rem;
+  padding: 0;
+  background: none;
+  border: none;
+}
+.pending-header h2 { margin: 0; }
+.pending-header form { margin: 0; }
+.pending-header button { margin: 0; }
 
 .pending-shift {
   display: grid;

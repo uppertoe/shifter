@@ -654,6 +654,57 @@ def test_confirm_with_htmx_returns_oob_refresh(client, conn):
     assert row["confirmed"] == 1
 
 
+def test_confirm_batch_confirms_all_passed_ids(client, conn):
+    nid = conn.execute("INSERT INTO nannies (name) VALUES ('A')").lastrowid
+    ids = []
+    for d in ("2026-05-04", "2026-05-05", "2026-05-06"):
+        sid = conn.execute(
+            "INSERT INTO shifts (nanny_id, start_time, end_time, source,"
+            " confirmed, created_by, updated_by)"
+            " VALUES (?, ?, ?, 'ha', 0, 'x', 'x')",
+            (nid, f"{d}T07:00:00+10:00", f"{d}T18:00:00+10:00"),
+        ).lastrowid
+        ids.append(sid)
+    r = client.post(
+        "/shifts/confirm-batch",
+        data={"shift_ids": [str(i) for i in ids]},
+        headers={"HX-Request": "true", "Remote-User": "alice"},
+    )
+    assert r.status_code == 200, r.text
+    rows = conn.execute(
+        f"SELECT confirmed FROM shifts WHERE id IN ({','.join('?' * len(ids))})",
+        ids,
+    ).fetchall()
+    assert all(row["confirmed"] == 1 for row in rows)
+
+
+def test_confirm_batch_does_not_touch_unlisted_shifts(client, conn):
+    nid = conn.execute("INSERT INTO nannies (name) VALUES ('A')").lastrowid
+    listed = conn.execute(
+        "INSERT INTO shifts (nanny_id, start_time, end_time, source,"
+        " confirmed, created_by, updated_by) VALUES (?, "
+        "'2026-05-04T07:00:00+10:00', '2026-05-04T18:00:00+10:00',"
+        " 'ha', 0, 'x', 'x')", (nid,),
+    ).lastrowid
+    untouched = conn.execute(
+        "INSERT INTO shifts (nanny_id, start_time, end_time, source,"
+        " confirmed, created_by, updated_by) VALUES (?, "
+        "'2026-04-01T07:00:00+10:00', '2026-04-01T18:00:00+10:00',"
+        " 'ha', 0, 'x', 'x')", (nid,),
+    ).lastrowid
+    client.post(
+        "/shifts/confirm-batch",
+        data={"shift_ids": [str(listed)]},
+        headers={"HX-Request": "true", "Remote-User": "alice"},
+    )
+    assert conn.execute(
+        "SELECT confirmed FROM shifts WHERE id = ?", (listed,)
+    ).fetchone()["confirmed"] == 1
+    assert conn.execute(
+        "SELECT confirmed FROM shifts WHERE id = ?", (untouched,)
+    ).fetchone()["confirmed"] == 0
+
+
 def test_confirm_without_htmx_redirects(client, conn):
     nid = conn.execute("INSERT INTO nannies (name) VALUES ('A')").lastrowid
     sid = conn.execute(

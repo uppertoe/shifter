@@ -407,6 +407,54 @@ def test_pay_all_expenses_handles_zero_unpaid(client, conn):
     assert r.status_code == 303  # no-op redirect, no error
 
 
+def test_visibility_toggle_hides_nanny_from_dashboard(client, conn):
+    """Hidden nannies (show_on_dashboard=0) should disappear from the
+    dashboard's open-shift list, pending-review list, and per-nanny owed
+    summaries — but stay listed under /nannies and /shifts."""
+    visible = conn.execute(
+        "INSERT INTO nannies (name) VALUES ('Visible')"
+    ).lastrowid
+    hidden = conn.execute(
+        "INSERT INTO nannies (name) VALUES ('Hidden')"
+    ).lastrowid
+    for nid in (visible, hidden):
+        conn.execute(
+            "INSERT INTO shifts (nanny_id, start_time, source, confirmed,"
+            " created_by, updated_by) VALUES (?, "
+            "'2026-05-06T07:00:00+10:00', 'manual', 0, 'x', 'x')", (nid,),
+        )
+    # Hide the second nanny.
+    r = client.post(
+        f"/nannies/{hidden}/visibility",
+        data={"show": "0"},
+        headers={"Remote-User": "alice"},
+    )
+    assert r.status_code == 200
+    flag = conn.execute(
+        "SELECT show_on_dashboard FROM nannies WHERE id = ?", (hidden,)
+    ).fetchone()["show_on_dashboard"]
+    assert flag == 0
+
+    # Dashboard should now reference Visible but not Hidden.
+    body = client.get("/", headers={"Remote-User": "alice"}).text
+    assert "Visible" in body
+    assert "Hidden" not in body
+
+    # /nannies still shows both.
+    body = client.get("/nannies", headers={"Remote-User": "alice"}).text
+    assert "Visible" in body
+    assert "Hidden" in body
+
+    # Re-show.
+    client.post(
+        f"/nannies/{hidden}/visibility",
+        data={"show": "1"},
+        headers={"Remote-User": "alice"},
+    )
+    body = client.get("/", headers={"Remote-User": "alice"}).text
+    assert "Hidden" in body
+
+
 def test_delete_shift_actually_deletes(client, conn):
     """Regression: the Delete form on the edit page used to be nested inside
     the Save form, which is invalid HTML — browsers silently submitted to

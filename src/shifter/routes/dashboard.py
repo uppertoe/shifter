@@ -52,7 +52,19 @@ def _build_context(conn, settings: Settings, user: str) -> dict:
     today = now.date()
     week_start = today - timedelta(days=today.weekday())  # Monday
 
-    open_shifts = repos.list_shifts(conn, open_only=True)
+    # Hidden nannies (show_on_dashboard=0) are filtered out everywhere on the
+    # dashboard — open shifts, pending review, stats, owed summaries — so the
+    # toggle is a single visual eject. /shifts and /nannies still list them.
+    visible_nannies = repos.list_nannies(
+        conn, include_inactive=True, dashboard_only=True
+    )
+    visible_nanny_ids = {n["id"] for n in visible_nannies}
+
+    def _is_visible(shift) -> bool:
+        return shift["nanny_id"] in visible_nanny_ids
+
+    open_shifts = [s for s in repos.list_shifts(conn, open_only=True)
+                   if _is_visible(s)]
     open_views = []
     for s in open_shifts:
         v = _shift_brief(conn, s, now=now, with_shots=True)
@@ -61,7 +73,8 @@ def _build_context(conn, settings: Settings, user: str) -> dict:
 
     # Pending review: only this-week-or-newer on the dashboard for at-a-glance
     # focus. Older unconfirmed shifts get a footer link.
-    all_pending = repos.list_shifts(conn, confirmed=False)
+    all_pending = [s for s in repos.list_shifts(conn, confirmed=False)
+                   if _is_visible(s)]
     pending_recent = [s for s in all_pending
                       if datetime.fromisoformat(s["start_time"]).date() >= week_start]
     pending_older_count = len(all_pending) - len(pending_recent)
@@ -72,11 +85,11 @@ def _build_context(conn, settings: Settings, user: str) -> dict:
         "SELECT COUNT(*) AS c FROM ha_events WHERE resolution = 'unresolved'"
     ).fetchone()["c"]
 
-    week_shifts = repos.list_shifts(
-        conn,
-        start_date=week_start,
-        end_date=today + timedelta(days=1),
-    )
+    week_shifts = [
+        s for s in repos.list_shifts(
+            conn, start_date=week_start, end_date=today + timedelta(days=1),
+        ) if _is_visible(s)
+    ]
     week_views = [_shift_brief(conn, s, now=now) for s in week_shifts]
     week_hours = sum(float(v["computed"].hours) for v in week_views)
     week_pay = sum(v["computed"].pay_cents for v in week_views)
@@ -85,9 +98,10 @@ def _build_context(conn, settings: Settings, user: str) -> dict:
     today_hours = sum(float(v["computed"].hours) for v in today_views)
     today_pay = sum(v["computed"].pay_cents for v in today_views)
 
-    nannies = repos.list_nannies(conn, include_inactive=False)
     nanny_summaries = []
-    for n in nannies:
+    for n in visible_nannies:
+        if not n["active"]:
+            continue
         s = pay.unpaid_summary(conn, n["id"], now=now)
         nanny_summaries.append({"nanny": n, "summary": s})
 

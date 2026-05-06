@@ -13,10 +13,20 @@ from datetime import date
 
 # --- nannies -----------------------------------------------------------------
 
-def list_nannies(conn: sqlite3.Connection, *, include_inactive: bool = False) -> list[sqlite3.Row]:
-    sql = "SELECT * FROM nannies"
+def list_nannies(
+    conn: sqlite3.Connection,
+    *,
+    include_inactive: bool = False,
+    dashboard_only: bool = False,
+) -> list[sqlite3.Row]:
+    where: list[str] = []
     if not include_inactive:
-        sql += " WHERE active = 1"
+        where.append("active = 1")
+    if dashboard_only:
+        where.append("show_on_dashboard = 1")
+    sql = "SELECT * FROM nannies"
+    if where:
+        sql += " WHERE " + " AND ".join(where)
     sql += " ORDER BY active DESC, name"
     return conn.execute(sql).fetchall()
 
@@ -37,6 +47,15 @@ def rename_nanny(conn: sqlite3.Connection, nanny_id: int, name: str) -> None:
 
 def set_nanny_active(conn: sqlite3.Connection, nanny_id: int, active: bool) -> None:
     conn.execute("UPDATE nannies SET active = ? WHERE id = ?", (1 if active else 0, nanny_id))
+
+
+def set_nanny_dashboard_visibility(
+    conn: sqlite3.Connection, nanny_id: int, show: bool
+) -> None:
+    conn.execute(
+        "UPDATE nannies SET show_on_dashboard = ? WHERE id = ?",
+        (1 if show else 0, nanny_id),
+    )
 
 
 def set_payment_notes(conn: sqlite3.Connection, nanny_id: int, notes: str | None) -> None:

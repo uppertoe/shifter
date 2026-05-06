@@ -115,6 +115,24 @@ def toggle_active(
     return _row_response(request, user, conn, nanny)
 
 
+@router.post("/{nanny_id}/visibility", response_class=HTMLResponse)
+def toggle_visibility(
+    nanny_id: int,
+    request: Request,
+    show: int = Form(...),
+    conn=Depends(get_db),
+    user: str = Depends(current_user),
+):
+    """Hide or show a nanny on the dashboard. Independent of active state —
+    hidden nannies are still listed under /nannies and /shifts; they just
+    don't clutter the today/this-week summaries."""
+    repos.set_nanny_dashboard_visibility(conn, nanny_id, bool(show))
+    nanny = repos.get_nanny(conn, nanny_id)
+    if nanny is None:
+        raise HTTPException(status.HTTP_404_NOT_FOUND)
+    return _row_response(request, user, conn, nanny)
+
+
 @router.post("/{nanny_id}/rates", response_class=HTMLResponse)
 def add_rate(
     nanny_id: int,

@@ -8,19 +8,31 @@
         {% if not nanny.active %}<small>· inactive</small>{% endif %}
       </p>
     </hgroup>
+    {# All three buttons sit as direct siblings of the role="group" div so
+       Pico joins them with shared borders. Wrapping any one in a <form>
+       breaks the join — the form becomes the group child instead. HTMX
+       posts the implicit values via hx-vals. #}
     <div class="nanny-actions" role="group">
-      <button class="secondary outline"
+      <button type="button" class="secondary outline"
               onclick="this.closest('.nanny').querySelector('.rename-form').toggleAttribute('hidden')">
         Rename
       </button>
-      <form hx-post="/nannies/{{ nanny.id }}/active"
-            hx-target="#nanny-{{ nanny.id }}"
-            hx-swap="outerHTML">
-        <input type="hidden" name="active" value="{{ 0 if nanny.active else 1 }}">
-        <button type="submit" class="secondary outline">
-          {{ 'Deactivate' if nanny.active else 'Reactivate' }}
-        </button>
-      </form>
+      <button type="button" class="secondary outline"
+              hx-post="/nannies/{{ nanny.id }}/visibility"
+              hx-vals='{"show": "{{ 0 if nanny.show_on_dashboard else 1 }}"}'
+              hx-target="#nanny-{{ nanny.id }}"
+              hx-swap="outerHTML"
+              title="{{ 'Hide from dashboard' if nanny.show_on_dashboard else 'Show on dashboard' }}">
+        <span aria-hidden="true">{{ '👁' if nanny.show_on_dashboard else '🚫' }}</span>
+        {{ 'On dashboard' if nanny.show_on_dashboard else 'Off dashboard' }}
+      </button>
+      <button type="button" class="secondary outline"
+              hx-post="/nannies/{{ nanny.id }}/active"
+              hx-vals='{"active": "{{ 0 if nanny.active else 1 }}"}'
+              hx-target="#nanny-{{ nanny.id }}"
+              hx-swap="outerHTML">
+        {{ 'Deactivate' if nanny.active else 'Reactivate' }}
+      </button>
     </div>
   </header>
 

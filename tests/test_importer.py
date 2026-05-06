@@ -60,6 +60,47 @@ def test_parse_amount_to_cents():
 
 # --- file parsing -----------------------------------------------------------
 
+def test_parse_timestamp_iso_z(tmp_path):
+    """ISO 8601 with Z (UTC) is converted to the configured local TZ."""
+    dt = importer._parse_timestamp("2025-04-01T07:00:00Z", MEL)
+    assert dt is not None and dt.tzinfo is MEL
+    # 07:00 UTC on 2025-04-01 = 18:00 local AEDT (+11)
+    assert dt.hour == 18
+    assert dt.day == 1
+
+
+def test_parse_timestamp_iso_with_offset(tmp_path):
+    """Numeric offset times are converted to the configured TZ. April 1 in
+    Melbourne is AEDT (+11), so a +10 input shifts forward by an hour."""
+    dt = importer._parse_timestamp("2025-04-01T07:00:00+10:00", MEL)
+    assert dt is not None and dt.hour == 8 and dt.minute == 0
+
+
+def test_parse_timestamp_legacy_naive(tmp_path):
+    dt = importer._parse_timestamp("2025-04-01 07:00:00", MEL)
+    assert dt is not None and dt.tzinfo is MEL and dt.hour == 7
+
+
+def test_parse_timestamp_garbage_returns_none():
+    assert importer._parse_timestamp("not a date", MEL) is None
+
+
+def test_parse_file_accepts_iso8601(tmp_path):
+    """Regression: a TimeTagger export with ISO 8601 timestamps used to
+    silently skip every row because the parser only accepted the legacy
+    naive format."""
+    p = tmp_path / "iso.tsv"
+    p.write_text(
+        "key\tstart\tstop\ttags\tdescription\n"
+        "abc\t2025-04-01T07:00:00Z\t2025-04-01T18:00:00Z\t#anita\tday shift\n"
+    )
+    rows = list(importer.parse_file(p, MEL))
+    assert len(rows) == 1
+    assert rows[0].key == "abc"
+    # 07:00 UTC = 18:00 AEDT
+    assert rows[0].start_local.hour == 18
+
+
 def test_parse_file_loads_rows(fixture_path):
     rows = list(importer.parse_file(fixture_path, MEL))
     # 13 data rows: 10 nanny shifts + 2 oncall + 1 empty-tag row

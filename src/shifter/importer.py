@@ -3,8 +3,12 @@
 Format (tab-separated, header row present):
     key    start    stop    tags    description
 
-* `start` and `stop` are naive local timestamps ('YYYY-MM-DD HH:MM:SS') —
-  interpreted in the configured timezone.
+* `start` and `stop` accept either:
+    - ISO 8601 with offset (e.g. ``2025-04-01T07:00:00Z`` or ``…+10:00``) —
+      converted to the configured timezone.
+    - Naive local timestamps (``YYYY-MM-DD HH:MM:SS``) — interpreted as
+      already in the configured timezone.
+  TimeTagger's own export format uses the ISO 8601 ``Z``-suffixed form.
 * `tags` is a whitespace-separated list of `#tag` words (may be empty).
 * `description` is free text. May contain expense hints like "lunch $12.90".
 
@@ -119,6 +123,24 @@ def parse_tags(tags_field: str) -> list[str]:
     return [t.lstrip("#").strip() for t in tags_field.split() if t.startswith("#")]
 
 
+def _parse_timestamp(s: str, tz: ZoneInfo) -> datetime | None:
+    """Accept ISO 8601 (with ``Z`` or numeric offset) or the legacy naive
+    ``YYYY-MM-DD HH:MM:SS`` form. Returns a tz-aware datetime in ``tz`` or
+    None if neither format parses."""
+    # ISO 8601 first — TimeTagger's actual export format. fromisoformat in
+    # Python 3.11+ accepts the "Z" suffix directly.
+    try:
+        dt = datetime.fromisoformat(s)
+    except ValueError:
+        try:
+            return datetime.strptime(s, "%Y-%m-%d %H:%M:%S").replace(tzinfo=tz)
+        except ValueError:
+            return None
+    if dt.tzinfo is None:
+        return dt.replace(tzinfo=tz)
+    return dt.astimezone(tz)
+
+
 def parse_file(path: Path, tz: ZoneInfo) -> Iterable[ParsedRow]:
     """Yield ParsedRow for every non-empty data line in the TSV."""
     with path.open(newline="", encoding="utf-8") as fh:
@@ -129,10 +151,9 @@ def parse_file(path: Path, tz: ZoneInfo) -> Iterable[ParsedRow]:
             stop_str = (row.get("stop") or "").strip()
             if not key or not start_str or not stop_str:
                 continue
-            try:
-                start = datetime.strptime(start_str, "%Y-%m-%d %H:%M:%S").replace(tzinfo=tz)
-                end = datetime.strptime(stop_str, "%Y-%m-%d %H:%M:%S").replace(tzinfo=tz)
-            except ValueError:
+            start = _parse_timestamp(start_str, tz)
+            end = _parse_timestamp(stop_str, tz)
+            if start is None or end is None:
                 continue  # malformed — skip
             tags = parse_tags(row.get("tags") or "")
             description = (row.get("description") or "").strip()

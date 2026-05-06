@@ -69,7 +69,20 @@
           {% if not s.end_time %}<small class="pill open">open</small>{% endif %}
         </td>
         <td>
-          <a href="/shifts/{{ s.id }}/edit" role="button" class="secondary outline">Edit</a>
+          <div class="row-actions">
+            {% if s.end_time and not s.paid_on %}
+              <details class="confirm">
+                <summary class="confirm-trigger">Paid</summary>
+                <form method="post" action="/shifts/{{ s.id }}/pay">
+                  <fieldset role="group">
+                    <input type="date" name="paid_on" value="{{ today_iso }}" required>
+                    <button type="submit">Confirm paid</button>
+                  </fieldset>
+                </form>
+              </details>
+            {% endif %}
+            <a href="/shifts/{{ s.id }}/edit" role="button" class="secondary outline">Edit</a>
+          </div>
         </td>
       </tr>
     {% endfor %}

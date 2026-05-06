@@ -247,6 +247,75 @@ def test_shifts_list_filter_confirmed_no(client, conn):
     assert f"/shifts/{confirmed_id}/edit" not in r.text
 
 
+def test_pay_single_shift(client, conn):
+    nid = conn.execute("INSERT INTO nannies (name) VALUES ('A')").lastrowid
+    sid = conn.execute(
+        "INSERT INTO shifts (nanny_id, start_time, end_time, source, confirmed,"
+        " created_by, updated_by) VALUES (?, '2026-05-04T07:00:00+10:00',"
+        " '2026-05-04T17:00:00+10:00', 'manual', 1, 'x', 'x')", (nid,),
+    ).lastrowid
+    r = client.post(
+        f"/shifts/{sid}/pay",
+        data={"paid_on": "2026-05-06", "paid_note": "cash"},
+        headers={"Remote-User": "alice"},
+        follow_redirects=False,
+    )
+    assert r.status_code == 303
+    row = conn.execute("SELECT paid_on, paid_note FROM shifts WHERE id = ?", (sid,)).fetchone()
+    assert row["paid_on"] == "2026-05-06"
+    assert row["paid_note"] == "cash"
+
+
+def test_pay_shift_404_for_unknown_shift(client, conn):
+    r = client.post(
+        "/shifts/9999/pay",
+        data={"paid_on": "2026-05-06"},
+        headers={"Remote-User": "alice"},
+    )
+    assert r.status_code == 404
+
+
+def test_pay_shift_400_for_bad_date(client, conn):
+    nid = conn.execute("INSERT INTO nannies (name) VALUES ('A')").lastrowid
+    sid = conn.execute(
+        "INSERT INTO shifts (nanny_id, start_time, end_time, source, confirmed,"
+        " created_by, updated_by) VALUES (?, '2026-05-04T07:00:00+10:00',"
+        " '2026-05-04T17:00:00+10:00', 'manual', 1, 'x', 'x')", (nid,),
+    ).lastrowid
+    r = client.post(
+        f"/shifts/{sid}/pay",
+        data={"paid_on": "yesterday"},
+        headers={"Remote-User": "alice"},
+    )
+    assert r.status_code == 400
+
+
+def test_shifts_list_shows_pay_button_only_for_unpaid_closed(client, conn):
+    nid = conn.execute("INSERT INTO nannies (name) VALUES ('A')").lastrowid
+    paid_sid = conn.execute(
+        "INSERT INTO shifts (nanny_id, start_time, end_time, paid_on, source,"
+        " confirmed, created_by, updated_by) VALUES (?,"
+        " '2026-05-01T07:00:00+10:00', '2026-05-01T17:00:00+10:00',"
+        " '2026-05-02', 'manual', 1, 'x', 'x')", (nid,),
+    ).lastrowid
+    unpaid_sid = conn.execute(
+        "INSERT INTO shifts (nanny_id, start_time, end_time, source, confirmed,"
+        " created_by, updated_by) VALUES (?,"
+        " '2026-05-04T07:00:00+10:00', '2026-05-04T17:00:00+10:00',"
+        " 'manual', 1, 'x', 'x')", (nid,),
+    ).lastrowid
+    open_sid = conn.execute(
+        "INSERT INTO shifts (nanny_id, start_time, source, confirmed,"
+        " created_by, updated_by) VALUES (?,"
+        " '2026-05-05T07:00:00+10:00', 'manual', 1, 'x', 'x')", (nid,),
+    ).lastrowid
+    body = client.get("/shifts", headers={"Remote-User": "alice"}).text
+    assert f'action="/shifts/{unpaid_sid}/pay"' in body
+    # Already-paid and still-open shifts shouldn't get the Paid action
+    assert f'action="/shifts/{paid_sid}/pay"' not in body
+    assert f'action="/shifts/{open_sid}/pay"' not in body
+
+
 def test_pay_single_expense(client, conn):
     nid = conn.execute("INSERT INTO nannies (name) VALUES ('A')").lastrowid
     conn.execute("INSERT INTO pay_rates (nanny_id, rate_cents, effective_from)"

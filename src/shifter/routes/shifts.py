@@ -94,6 +94,7 @@ def list_page(
             "filter_confirmed": confirmed,
             "filter_open": bool(open_only),
             "tz": settings.zoneinfo,
+            "today_iso": date.today().isoformat(),
         },
     )
 
@@ -349,6 +350,30 @@ def inline_save(
     if request.headers.get("HX-Request"):
         return _htmx_swap_with_oob(request, conn, settings, user)
     return RedirectResponse("/", status_code=status.HTTP_303_SEE_OTHER)
+
+
+@router.post("/{shift_id}/pay")
+def pay_shift(
+    shift_id: int,
+    request: Request,
+    paid_on: str = Form(...),
+    paid_note: str = Form(""),
+    conn=Depends(get_db),
+    user: str = Depends(current_user),
+):
+    """Mark a single shift paid. Date supplied by the caller; usually today."""
+    shift = repos.get_shift(conn, shift_id)
+    if shift is None:
+        raise HTTPException(status.HTTP_404_NOT_FOUND)
+    try:
+        paid_date = date.fromisoformat(paid_on)
+    except ValueError as e:
+        raise HTTPException(status.HTTP_400_BAD_REQUEST, str(e))
+    repos.mark_shifts_paid(
+        conn, [shift_id], paid_date,
+        paid_note=paid_note.strip() or None, updated_by=user,
+    )
+    return RedirectResponse("/shifts", status_code=status.HTTP_303_SEE_OTHER)
 
 
 @router.post("/{shift_id}/confirm", response_class=HTMLResponse)

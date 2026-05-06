@@ -79,6 +79,9 @@
 .filter-bar .open-toggle input { margin: 0; }
 
 .row-pending td:first-child { border-left: 3px solid var(--pico-primary); }
+.row-actions { display: flex; gap: 0.4rem; align-items: center; flex-wrap: wrap; }
+.row-actions a, .row-actions button { margin: 0; }
+.row-actions details.confirm summary { padding: 0.4rem 0.7rem; }
 
 .pill {
   display: inline-block;

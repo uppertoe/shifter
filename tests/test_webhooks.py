@@ -270,6 +270,38 @@ def test_delete_shift_actually_deletes(client, conn):
     assert conn.execute("SELECT COUNT(*) FROM expenses WHERE shift_id = ?", (sid,)).fetchone()[0] == 0
 
 
+def test_delete_with_htmx_returns_empty_body(client, conn):
+    nid = conn.execute("INSERT INTO nannies (name) VALUES ('A')").lastrowid
+    sid = conn.execute(
+        "INSERT INTO shifts (nanny_id, start_time, source, confirmed,"
+        " created_by, updated_by) VALUES (?, '2026-05-04T07:00:00+10:00',"
+        " 'manual', 1, 'x', 'x')", (nid,),
+    ).lastrowid
+    r = client.post(f"/shifts/{sid}/delete",
+                     headers={"HX-Request": "true", "Remote-User": "alice"})
+    assert r.status_code == 200
+    assert r.text == ""
+    assert conn.execute("SELECT COUNT(*) FROM shifts WHERE id = ?", (sid,)).fetchone()[0] == 0
+
+
+def test_inline_editor_includes_delete_button(client, conn):
+    nid = conn.execute("INSERT INTO nannies (name) VALUES ('A')").lastrowid
+    sid = conn.execute(
+        "INSERT INTO shifts (nanny_id, start_time, source, confirmed,"
+        " created_by, updated_by) VALUES (?, '2026-05-04T07:00:00+10:00',"
+        " 'ha', 0, 'x', 'x')", (nid,),
+    ).lastrowid
+    body = client.get(
+        f"/shifts/{sid}/inline-editor?row_id=open-shift-{sid}",
+        headers={"Remote-User": "alice"},
+    ).text
+    # Delete form is OUTSIDE the save form (after the first </form>).
+    save_close = body.find("</form>")
+    delete_post = body.find(f'hx-post="/shifts/{sid}/delete"')
+    assert save_close != -1 and delete_post != -1
+    assert delete_post > save_close, "delete form must not be nested in save form"
+
+
 def test_edit_page_delete_form_is_not_nested(client, conn):
     """The Delete form must live outside the outer Save form."""
     nid = conn.execute("INSERT INTO nannies (name) VALUES ('A')").lastrowid

@@ -31,6 +31,19 @@
     </div>
   </form>
 
+  {# Delete must be its own form — nested forms are invalid HTML and the
+     browser silently submits to the outer form's action. #}
+  <div class="form-actions">
+    <details class="confirm">
+      <summary class="confirm-trigger secondary outline">Delete shift</summary>
+      <form hx-post="/shifts/{{ shift.id }}/delete"
+            hx-target="#{{ row_id }}"
+            hx-swap="outerHTML">
+        <button type="submit" class="contrast">Confirm delete</button>
+      </form>
+    </details>
+  </div>
+
   <hr>
   <h4>Expenses</h4>
   <div id="expenses-block-{{ shift.id }}">

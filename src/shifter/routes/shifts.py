@@ -229,10 +229,13 @@ def update(
 @router.post("/{shift_id}/delete")
 def delete(
     shift_id: int,
+    request: Request,
     conn=Depends(get_db),
     user: str = Depends(current_user),
 ):
     repos.delete_shift(conn, shift_id)
+    if request.headers.get("HX-Request"):
+        return HTMLResponse("")
     return RedirectResponse("/shifts", status_code=status.HTTP_303_SEE_OTHER)
 
 

@@ -407,6 +407,80 @@ def test_pay_all_expenses_handles_zero_unpaid(client, conn):
     assert r.status_code == 303  # no-op redirect, no error
 
 
+def test_schedule_chip_click_cycle_for_manual_oneoff(client, conn):
+    """Manual one-off: click 1 → cancelled, click 2 → deleted, no resurrection."""
+    nid = conn.execute("INSERT INTO nannies (name) VALUES ('A')").lastrowid
+    eid = conn.execute(
+        "INSERT INTO expected_shifts (nanny_id, date, start_time, end_time, source)"
+        " VALUES (?, '2026-06-01', '07:00', '18:00', 'manual')", (nid,),
+    ).lastrowid
+    # Click 1: cancel
+    r = client.post(
+        f"/schedule/expected/{eid}/cancel",
+        data={"nanny_id": str(nid), "on_date": "2026-06-01"},
+        headers={"Remote-User": "alice"},
+    )
+    assert r.status_code == 200
+    assert conn.execute(
+        "SELECT cancelled FROM expected_shifts WHERE id = ?", (eid,)
+    ).fetchone()["cancelled"] == 1
+    # Click 2: delete
+    r = client.post(
+        f"/schedule/expected/{eid}/delete",
+        data={"nanny_id": str(nid), "on_date": "2026-06-01"},
+        headers={"Remote-User": "alice"},
+    )
+    assert r.status_code == 200
+    assert conn.execute(
+        "SELECT 1 FROM expected_shifts WHERE id = ?", (eid,)
+    ).fetchone() is None
+
+
+def test_schedule_chip_click_cycle_for_pattern_slot(client, conn):
+    """Pattern slot: click 1 → cancelled, click 2 → re-materialized as active.
+    The user-visible cycle is active → cancelled → active for recurring chips."""
+    nid = conn.execute("INSERT INTO nannies (name) VALUES ('A')").lastrowid
+    today = date.today()
+    pid = conn.execute(
+        "INSERT INTO schedule_patterns "
+        " (nanny_id, day_of_week, start_time, end_time, active_from)"
+        " VALUES (?, ?, '07:00', '18:00', ?)",
+        (nid, today.weekday(), today.isoformat()),
+    ).lastrowid
+    # Project the pattern to materialize this week's expected_shifts row.
+    from shifter import schedule
+    schedule.materialize(conn, from_date=today, to_date=today)
+    eid = conn.execute(
+        "SELECT id FROM expected_shifts WHERE pattern_id = ? AND date = ?",
+        (pid, today.isoformat()),
+    ).fetchone()["id"]
+    # Click 1: cancel
+    client.post(
+        f"/schedule/expected/{eid}/cancel",
+        data={"nanny_id": str(nid), "on_date": today.isoformat()},
+        headers={"Remote-User": "alice"},
+    )
+    assert conn.execute(
+        "SELECT cancelled FROM expected_shifts WHERE id = ?", (eid,)
+    ).fetchone()["cancelled"] == 1
+    # Click 2: delete — but the response handler re-materializes, so a
+    # fresh active row appears at the same date/start_time. The original
+    # id is gone; a new id replaces it.
+    client.post(
+        f"/schedule/expected/{eid}/delete",
+        data={"nanny_id": str(nid), "on_date": today.isoformat()},
+        headers={"Remote-User": "alice"},
+    )
+    rows = conn.execute(
+        "SELECT id, cancelled FROM expected_shifts"
+        " WHERE pattern_id = ? AND date = ?",
+        (pid, today.isoformat()),
+    ).fetchall()
+    assert len(rows) == 1
+    assert rows[0]["id"] != eid       # row was hard-deleted, then projected
+    assert rows[0]["cancelled"] == 0  # back to active
+
+
 def test_visibility_toggle_hides_nanny_from_dashboard(client, conn):
     """Hidden nannies (show_on_dashboard=0) should disappear from the
     dashboard's open-shift list, pending-review list, and per-nanny owed

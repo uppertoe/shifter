@@ -2,15 +2,22 @@
    Used both inline (calendar grid) and as HTMX swap target. #}
 <div class="day-num">{{ day.day }}</div>
 <div class="day-slots">
+  {# Click cycle on chips:
+       active → cancelled (soft, kept for record — e.g. sick day)
+       cancelled → deleted (hard remove of the row)
+     For pattern-sourced chips the deleted row is immediately re-created
+     by materialize() in the response handler, which makes the third
+     click feel like "restore". For manual one-offs the chip is gone and
+     the + button reappears so the user can re-add fresh. #}
   {% for slot in slots %}
-    <form hx-post="/schedule/expected/{{ slot.expected_id }}/{% if slot.cancelled %}uncancel{% else %}cancel{% endif %}"
+    <form hx-post="/schedule/expected/{{ slot.expected_id }}/{% if slot.cancelled %}delete{% else %}cancel{% endif %}"
           hx-target="#day-{{ day.isoformat() }}"
           hx-swap="innerHTML"
           hx-include="#selected-nanny-id, [name='on_date_{{ day.isoformat() }}']">
       <input type="hidden" name="nanny_id" value="{{ selected_nanny.id if selected_nanny else slot.nanny_id }}">
       <input type="hidden" name="on_date" value="{{ day.isoformat() }}">
       <button type="submit"
-              title="{{ slot.nanny_name }} {{ slot.start_time }}–{{ slot.end_time }} ({{ 'recurring' if slot.source == 'pattern' else 'one-off' }}){% if slot.cancelled %} — cancelled, click to restore{% else %} — click to cancel{% endif %}"
+              title="{{ slot.nanny_name }} {{ slot.start_time }}–{{ slot.end_time }} ({{ 'recurring' if slot.source == 'pattern' else 'one-off' }}){% if slot.cancelled %} — click to {{ 'restore' if slot.source == 'pattern' else 'delete' }}{% else %} — click to cancel{% endif %}"
               class="chip {% if slot.cancelled %}cancelled{% endif %}"
               style="--chip-bg: {{ nanny_color(slot.nanny_id) }};">
         {{ slot.nanny_name }} <small>{{ slot.start_time }}</small>

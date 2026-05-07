@@ -216,7 +216,13 @@ def delete_expected(
 
 
 def _day_cell_response(request, conn, settings, user, d: date, nanny_id: int):
-    """Return just the updated day-cell partial for HTMX swap."""
+    """Return just the updated day-cell partial for HTMX swap.
+
+    materialize() runs first so that deleting a pattern-sourced expected
+    shift instantly re-projects it as active — that's what makes the chip
+    click cycle (active → cancelled → restored) work for recurring slots.
+    Manual one-offs aren't affected (no pattern to project from)."""
+    schedule.materialize(conn)
     today = datetime.now(settings.zoneinfo).date()
     slots = schedule.expected_on_date(conn, d, include_cancelled=True)
     nannies = repos.list_nannies(conn, include_inactive=False)

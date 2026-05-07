@@ -22,7 +22,10 @@
 
   <div class="grid">
     <label>Start
-      <input type="datetime-local" name="start_local" value="{{ start_local }}" required>
+      <span class="input-clearable">
+        <input type="datetime-local" name="start_local" value="{{ start_local }}" required>
+        <button type="button" class="input-clear-btn" aria-label="Clear start time">&times;</button>
+      </span>
     </label>
     <label>End <small class="muted">(leave blank if shift is still open)</small>
       <span class="input-clearable">

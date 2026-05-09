@@ -376,6 +376,15 @@ def inline_save(
     return RedirectResponse("/", status_code=status.HTTP_303_SEE_OTHER)
 
 
+def _safe_next(path: str, fallback: str) -> str:
+    """Only allow redirects to internal paths. Reject anything that doesn't
+    start with a single slash so an attacker can't send a payment form to
+    "//evil.com/" and bounce the user off-site."""
+    if path and path.startswith("/") and not path.startswith("//"):
+        return path
+    return fallback
+
+
 @router.post("/{shift_id}/pay")
 def pay_shift(
     shift_id: int,
@@ -383,13 +392,17 @@ def pay_shift(
     paid_on: str = Form(...),
     paid_note: str = Form(""),
     include_expenses: int = Form(0),
+    next: str = Form(""),
     conn=Depends(get_db),
     user: str = Depends(current_user),
 ):
     """Mark a single shift paid. By default the form sends include_expenses=1
     so the shift's unpaid expenses are settled in the same payment; the user
     can untick the checkbox to settle the shift on its own. An unchecked
-    checkbox simply isn't submitted, hence the default of 0."""
+    checkbox simply isn't submitted, hence the default of 0.
+
+    The optional ``next`` form field lets callers (e.g. /nannies/X/unpaid)
+    return the user to their original page after the redirect."""
     shift = repos.get_shift(conn, shift_id)
     if shift is None:
         raise HTTPException(status.HTTP_404_NOT_FOUND)
@@ -408,7 +421,9 @@ def pay_shift(
         ]
         if unpaid_expense_ids:
             repos.mark_expenses_paid(conn, unpaid_expense_ids, paid_date)
-    return RedirectResponse("/shifts", status_code=status.HTTP_303_SEE_OTHER)
+    return RedirectResponse(
+        _safe_next(next, "/shifts"), status_code=status.HTTP_303_SEE_OTHER,
+    )
 
 
 @router.post("/{shift_id}/confirm", response_class=HTMLResponse)

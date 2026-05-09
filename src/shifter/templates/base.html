@@ -38,6 +38,28 @@
       input.value = "";
       input.dispatchEvent(new Event("change", { bubbles: true }));
     });
+
+    // Toggle a target element's [hidden] attribute on click. Used for
+    // accordion-style table rows where the form row spans the full table
+    // width (colspan) — neither <details> nor CSS sibling selectors can
+    // span across <tr>s, so we lean on a tiny JS handler.
+    //   <button data-toggle-row="pay-row-42">Mark paid</button>
+    //   <tr id="pay-row-42" hidden>...</tr>
+    document.addEventListener("click", function (e) {
+      var trigger = e.target.closest("[data-toggle-row]");
+      if (!trigger) return;
+      var id = trigger.getAttribute("data-toggle-row");
+      var target = document.getElementById(id);
+      if (!target) return;
+      e.preventDefault();
+      if (target.hasAttribute("hidden")) {
+        target.removeAttribute("hidden");
+        trigger.setAttribute("aria-expanded", "true");
+      } else {
+        target.setAttribute("hidden", "");
+        trigger.setAttribute("aria-expanded", "false");
+      }
+    });
   </script>
 </head>
 <body>

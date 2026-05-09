@@ -323,6 +323,42 @@ def test_pay_shift_does_not_touch_expenses_without_checkbox(client, conn):
     ).fetchone()["paid_on"] is None
 
 
+def test_pay_shift_redirects_to_next_when_safe(client, conn):
+    nid = conn.execute("INSERT INTO nannies (name) VALUES ('A')").lastrowid
+    sid = conn.execute(
+        "INSERT INTO shifts (nanny_id, start_time, end_time, source, confirmed,"
+        " created_by, updated_by) VALUES (?, '2026-05-04T07:00:00+10:00',"
+        " '2026-05-04T17:00:00+10:00', 'manual', 1, 'x', 'x')", (nid,),
+    ).lastrowid
+    r = client.post(
+        f"/shifts/{sid}/pay",
+        data={"paid_on": "2026-05-06", "next": f"/nannies/{nid}/unpaid"},
+        headers={"Remote-User": "alice"},
+        follow_redirects=False,
+    )
+    assert r.status_code == 303
+    assert r.headers["location"] == f"/nannies/{nid}/unpaid"
+
+
+def test_pay_shift_rejects_external_next(client, conn):
+    """Unsafe ``next`` (protocol-relative or external) falls back to /shifts."""
+    nid = conn.execute("INSERT INTO nannies (name) VALUES ('A')").lastrowid
+    sid = conn.execute(
+        "INSERT INTO shifts (nanny_id, start_time, end_time, source, confirmed,"
+        " created_by, updated_by) VALUES (?, '2026-05-04T07:00:00+10:00',"
+        " '2026-05-04T17:00:00+10:00', 'manual', 1, 'x', 'x')", (nid,),
+    ).lastrowid
+    for bad in ("//evil.com/path", "https://evil.com", "javascript:alert(1)", ""):
+        r = client.post(
+            f"/shifts/{sid}/pay",
+            data={"paid_on": "2026-05-06", "next": bad},
+            headers={"Remote-User": "alice"},
+            follow_redirects=False,
+        )
+        assert r.status_code == 303
+        assert r.headers["location"] == "/shifts"
+
+
 def test_pay_shift_404_for_unknown_shift(client, conn):
     r = client.post(
         "/shifts/9999/pay",

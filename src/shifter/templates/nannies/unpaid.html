@@ -18,9 +18,12 @@
   {% if summary.shifts %}
     <figure>
     <table>
-      <thead><tr><th>Date</th><th>Times</th><th>Hours</th><th>Pay</th></tr></thead>
+      <thead><tr><th>Date</th><th>Times</th><th>Hours</th><th>Pay</th><th></th></tr></thead>
       <tbody>
         {% for s in summary.shifts %}
+          {% set shift_exps = summary.expenses | selectattr('shift_id', 'equalto', s.shift_id) | list %}
+          {% set shift_exps_total = shift_exps | sum(attribute='amount_cents') %}
+          {% set pay_row_id = 'pay-row-unpaid-shift-' ~ s.shift_id %}
           <tr>
             <td>{{ format_date(s.start.isoformat(), tz) }}</td>
             <td><small>
@@ -29,11 +32,38 @@
             </small></td>
             <td>{{ "%.2f"|format(s.hours|float) }}h</td>
             <td>{{ format_cents(s.pay_cents) }}</td>
+            <td>
+              <button type="button" class="secondary outline"
+                      data-toggle-row="{{ pay_row_id }}" aria-expanded="false">Mark paid</button>
+            </td>
+          </tr>
+          <tr id="{{ pay_row_id }}" class="pay-row" hidden>
+            <td colspan="5">
+              <form method="post" action="/shifts/{{ s.shift_id }}/pay" class="pay-form">
+                <input type="hidden" name="next" value="/nannies/{{ nanny.id }}/unpaid">
+                <label>Paid on
+                  <input type="date" name="paid_on" value="{{ today_iso }}" required>
+                </label>
+                {% if shift_exps %}
+                  <label class="inline-check">
+                    <input type="checkbox" name="include_expenses" value="1" checked>
+                    Also pay {{ shift_exps|length }} expense{{ '' if shift_exps|length == 1 else 's' }}
+                    ({{ format_cents(shift_exps_total) }})
+                  </label>
+                {% endif %}
+                <div class="pay-form-actions">
+                  <button type="submit">Confirm paid</button>
+                  <button type="button" class="secondary outline"
+                          data-toggle-row="{{ pay_row_id }}">Cancel</button>
+                </div>
+              </form>
+            </td>
           </tr>
         {% endfor %}
         <tr>
           <th colspan="3" style="text-align:right">Subtotal</th>
           <th>{{ format_cents(summary.shifts_subtotal_cents) }}</th>
+          <th></th>
         </tr>
       </tbody>
     </table>
@@ -51,6 +81,7 @@
       <thead><tr><th>Shift date</th><th>Description</th><th>Amount</th><th></th></tr></thead>
       <tbody>
         {% for e in summary.expenses %}
+          {% set pay_row_id = 'pay-row-unpaid-exp-' ~ e.expense_id %}
           <tr>
             <td>{{ format_date(e.shift_start.isoformat(), tz) }}</td>
             <td>
@@ -59,37 +90,32 @@
             </td>
             <td>{{ format_cents(e.amount_cents) }}</td>
             <td>
-              <details class="confirm">
-                <summary class="confirm-trigger">Paid</summary>
-                <form method="post" action="/nannies/{{ nanny.id }}/expenses/{{ e.expense_id }}/pay">
-                  <fieldset role="group">
-                    <input type="date" name="paid_on" value="{{ today_iso }}" required>
-                    <button type="submit">Confirm paid</button>
-                  </fieldset>
-                </form>
-              </details>
+              <button type="button" class="secondary outline"
+                      data-toggle-row="{{ pay_row_id }}" aria-expanded="false">Mark paid</button>
+            </td>
+          </tr>
+          <tr id="{{ pay_row_id }}" class="pay-row" hidden>
+            <td colspan="4">
+              <form method="post" action="/nannies/{{ nanny.id }}/expenses/{{ e.expense_id }}/pay" class="pay-form">
+                <label>Paid on
+                  <input type="date" name="paid_on" value="{{ today_iso }}" required>
+                </label>
+                <div class="pay-form-actions">
+                  <button type="submit">Confirm paid</button>
+                  <button type="button" class="secondary outline"
+                          data-toggle-row="{{ pay_row_id }}">Cancel</button>
+                </div>
+              </form>
             </td>
           </tr>
         {% endfor %}
         <tr>
           <th colspan="2" style="text-align:right">Subtotal</th>
           <th>{{ format_cents(summary.expenses_subtotal_cents) }}</th>
-          <th>
-            <details class="confirm">
-              <summary class="confirm-trigger">Mark all expenses paid</summary>
-              <form method="post" action="/nannies/{{ nanny.id }}/expenses/pay-all">
-                <fieldset role="group">
-                  <input type="date" name="paid_on" value="{{ today_iso }}" required>
-                  <button type="submit">
-                    Pay {{ summary.expenses|length }} expense{{ '' if summary.expenses|length == 1 else 's' }}
-                    ({{ format_cents(summary.expenses_subtotal_cents) }})
-                  </button>
-                </fieldset>
-              </form>
-            </details>
-          </th>
+          <th></th>
         </tr>
       </tbody>
+    </table>
     </figure>
   {% else %}
     <p><small>None.</small></p>
@@ -101,6 +127,16 @@
     <strong>Grand total</strong>
     <span class="big">{{ format_cents(summary.grand_total_cents) }}</span>
   </header>
+  <p class="grand-total-breakdown">
+    <small class="muted">
+      {{ summary.shifts|length }} shift{{ '' if summary.shifts|length == 1 else 's' }}
+      ({{ format_cents(summary.shifts_subtotal_cents) }})
+      {% if summary.expenses %}
+        + {{ summary.expenses|length }} expense{{ '' if summary.expenses|length == 1 else 's' }}
+        ({{ format_cents(summary.expenses_subtotal_cents) }})
+      {% endif %}
+    </small>
+  </p>
 
   <div class="copy-block">
     <p class="copy-label"><small class="muted">Tap to copy:</small></p>
@@ -131,14 +167,13 @@
     {% endif %}
   </div>
 
-
   <form method="post" action="/nannies/{{ nanny.id }}/pay-all">
     <fieldset role="group">
       <input type="date" name="paid_on" value="{{ today_iso }}" required>
       <input name="paid_note" placeholder="Note (optional, e.g. 'cash')">
     </fieldset>
     <details class="confirm">
-      <summary class="confirm-trigger">Mark all paid</summary>
+      <summary class="confirm-trigger">Mark all shifts &amp; expenses paid</summary>
       <p>
         <small>
           {{ summary.shifts|length }} shift{{ '' if summary.shifts|length == 1 else 's' }}

@@ -215,10 +215,36 @@ main > section:first-child { margin-block-start: 0; }
 .owed .big { font-size: 1.5rem; font-weight: 600; }
 .owed a[role="button"] { margin: 0; width: 100%; }
 
-.grand-total { padding: 1.25rem; }
-.grand-total header { display: flex; justify-content: space-between; align-items: center; padding: 0; margin-bottom: 1rem; background: none; border: none; }
+/* Use flex+gap throughout the grand-total card so every vertical gap
+   between sections (header → breakdown → copy-block → form fieldset →
+   details) is exactly 1rem, with no margin-collapse surprises caused by
+   <details>'s default inline-block display or fieldset's quirks. */
+.grand-total {
+  padding: 1.25rem;
+  display: flex;
+  flex-direction: column;
+  gap: 1rem;
+}
+.grand-total > * { margin: 0; }
+.grand-total header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  padding: 0;
+  background: none;
+  border: none;
+}
 .grand-total .big { font-size: 1.6rem; font-weight: 600; }
-.grand-total fieldset { margin-bottom: 0; }
+.grand-total form {
+  display: flex;
+  flex-direction: column;
+  gap: 1rem;
+  margin: 0;
+}
+.grand-total form > * { margin: 0; }
+.grand-total form fieldset { margin: 0; }
+.grand-total form details.confirm { display: block; margin: 0; }
+.grand-total .copy-block { margin: 0; }
 
 /* Section header with an inline action (e.g. "Confirm all N" beside the
    pending-review heading). */
@@ -333,28 +359,29 @@ button.copy-chip {
 }
 button.copy-chip:hover { background: var(--pico-card-background-color); border-color: var(--pico-primary); }
 button.copy-chip.copied { background: #2e7d32; color: #fff; border-color: #2e7d32; }
-button.copy-chip .copy-key { color: var(--pico-muted-color); font-size: 0.75rem; text-transform: uppercase; letter-spacing: 0.05em; }
+button.copy-chip .copy-key {
+  /* var(--pico-muted-color) was too low-contrast on the dark theme's
+     secondary-background. Use the chip's own text colour at 70% so the
+     uppercase label stays "muted" but readable. */
+  color: var(--pico-color);
+  opacity: 0.7;
+  font-size: 0.75rem;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+}
 button.copy-chip.copied .copy-key { color: rgba(255,255,255,0.85); }
 button.copy-chip .copy-val { font-weight: 500; font-variant-numeric: tabular-nums; }
 
 /* inline confirm pattern: click summary to reveal the destructive action.
    <details><summary class="confirm-trigger">…</summary><form>…</form></details>
 
-   In tight row contexts (shifts list, dashboard cards, table cells) the
-   revealed body floats as a small popover anchored to the summary, so it
-   doesn't reflow surrounding rows. Free-standing confirms (e.g. on
-   /shifts/edit) keep the inline reflow behaviour. */
+   The dashboard card variant (.pending-actions) floats the form as a
+   popover, anchored to the summary, so cards don't grow vertically. */
 details.confirm { display: inline-block; margin: 0; }
-.row-actions details.confirm,
-.pending-actions details.confirm,
-td details.confirm { position: relative; }
+.pending-actions details.confirm { position: relative; }
 
-.row-actions details.confirm[open] > form,
-.row-actions details.confirm[open] > p,
 .pending-actions details.confirm[open] > form,
-.pending-actions details.confirm[open] > p,
-td details.confirm[open] > form,
-td details.confirm[open] > p {
+.pending-actions details.confirm[open] > p {
   position: absolute;
   z-index: 100;
   top: calc(100% + 0.25rem);
@@ -367,18 +394,61 @@ td details.confirm[open] > p {
   box-shadow: 0 6px 18px rgba(0, 0, 0, 0.15);
   margin: 0;
 }
-.row-actions details.confirm[open] > form > *,
-.pending-actions details.confirm[open] > form > *,
-td details.confirm[open] > form > * {
+.pending-actions details.confirm[open] > form > *:not(:last-child) {
   margin-bottom: 0.5rem;
 }
-.row-actions details.confirm[open] > form > *:last-child,
-.pending-actions details.confirm[open] > form > *:last-child,
-td details.confirm[open] > form > *:last-child {
-  margin-bottom: 0;
+
+/* Pay-row pattern: a hidden <tr> with colspan that, when toggled visible,
+   gives the form the full table width to lay itself out. Triggered by
+   data-toggle-row buttons. The form uses flex so the date input,
+   include-expenses checkbox, and action buttons sit side-by-side and
+   wrap cleanly on narrow screens. */
+.pay-row > td {
+  padding: 0.75rem 1.25rem;
+  border-top: 1px dashed var(--pico-muted-border-color);
 }
-.inline-check {
+/* Compact controls so the pay-row form matches the row's other action
+   buttons (2.25rem height, 0.875rem font). Labels are inline-flex so the
+   "Paid on" text sits next to the date input rather than above it. */
+.pay-form {
   display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 0.5rem 1rem;
+  margin: 0;
+  font-size: 0.875rem;
+}
+.pay-form > * { margin: 0; }
+.pay-form label {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.5rem;
+  margin: 0;
+}
+.pay-form input[type="date"],
+.pay-form input[type="text"] {
+  height: 2.25rem;
+  padding: 0 0.6rem;
+  margin: 0;
+  width: auto;
+  min-width: 0;
+  font-size: 0.875rem;
+}
+.pay-form-actions {
+  display: flex;
+  gap: 0.4rem;
+  margin-left: auto;
+}
+.pay-form-actions > * { margin: 0; }
+.pay-form-actions button {
+  height: 2.25rem;
+  padding: 0 0.85rem;
+  font-size: 0.875rem;
+  line-height: 1;
+}
+
+.inline-check {
+  display: inline-flex;
   align-items: center;
   gap: 0.4rem;
   font-size: 0.875rem;

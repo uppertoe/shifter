@@ -9,7 +9,13 @@
 
 {% if error %}<article class="error"><strong>Couldn't save:</strong> {{ error }}</article>{% endif %}
 
-<form method="post" action="{% if shift %}/shifts/{{ shift.id }}{% else %}/shifts{% endif %}">
+{# The main edit form has no Save button inside it — Save lives below the
+   Expenses section and references the form by id. This lets the user
+   review existing expenses (and add new ones) before committing the
+   shift edit. Expenses' own forms (HTMX) sit *outside* the main form to
+   avoid nesting; the form="shift-edit-form" attribute on the Save
+   button bridges back to it. #}
+<form id="shift-edit-form" method="post" action="{% if shift %}/shifts/{{ shift.id }}{% else %}/shifts{% endif %}">
   <div class="grid">
     <label>Nanny
       <select name="nanny_id" required>
@@ -49,24 +55,7 @@
   <label>Notes
     <textarea name="notes" rows="2" placeholder="optional">{{ shift.notes if shift else '' }}</textarea>
   </label>
-
-  <div class="form-actions">
-    <button type="submit">Save</button>
-  </div>
 </form>
-
-{% if shift %}
-  {# Delete lives in its own form because nested <form> is invalid HTML and
-     browsers silently fall back to the outer form's action. #}
-  <div class="form-actions">
-    <details class="confirm">
-      <summary class="confirm-trigger secondary outline">Delete shift</summary>
-      <form method="post" action="/shifts/{{ shift.id }}/delete">
-        <button type="submit" class="contrast">Confirm delete</button>
-      </form>
-    </details>
-  </div>
-{% endif %}
 
 {% if shift %}
   <hr>
@@ -85,5 +74,23 @@
       <button type="submit">Add expense</button>
     </fieldset>
   </form>
+  <hr>
+{% endif %}
+
+<div class="form-actions">
+  <button type="submit" form="shift-edit-form">Save</button>
+</div>
+
+{% if shift %}
+  {# Delete lives in its own form because nested <form> is invalid HTML and
+     browsers silently fall back to the outer form's action. #}
+  <div class="form-actions">
+    <details class="confirm">
+      <summary class="confirm-trigger secondary outline">Delete shift</summary>
+      <form method="post" action="/shifts/{{ shift.id }}/delete">
+        <button type="submit" class="contrast">Confirm delete</button>
+      </form>
+    </details>
+  </div>
 {% endif %}
 {% endblock %}

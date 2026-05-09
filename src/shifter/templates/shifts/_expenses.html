@@ -10,9 +10,11 @@
         <td>{{ e.description }}</td>
         <td>{{ format_cents(e.amount_cents) }}</td>
         <td>
-          {% if e.pending_review %}<small class="pill pending">review</small>{% endif %}
-          {% if e.paid_on %}<small class="pill paid">paid {{ e.paid_on }}</small>
-          {% else %}<small class="pill unpaid">unpaid</small>{% endif %}
+          <div class="pill-group">
+            {% if e.pending_review %}<small class="pill pending">review</small>{% endif %}
+            {% if e.paid_on %}<small class="pill paid">paid {{ e.paid_on }}</small>
+            {% else %}<small class="pill unpaid">unpaid</small>{% endif %}
+          </div>
         </td>
         <td>
           <details class="confirm">

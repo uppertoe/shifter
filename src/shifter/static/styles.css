@@ -184,6 +184,29 @@
 /* shift edit form */
 form .grid { gap: 0.75rem; }
 form textarea { font: inherit; padding: 0.4rem 0.6rem; border-radius: 6px; }
+
+/* Match the submit button's height to the <input>s inside the same
+   role="group". Pico gives both the same padding/line-height/border, but
+   <button>'s baseline differs from <input>'s in most browsers, so the
+   button renders a few px taller. Forcing an explicit height computed
+   from the same metrics pins them to identical pixel size. The button
+   gets flex: 0 0 auto and nowrap so it sizes to its label and isn't
+   squeezed by the inputs (which would otherwise hide the text under
+   the fixed height). */
+fieldset[role="group"] > button,
+fieldset[role="group"] > input[type="submit"] {
+  margin: 0;
+  font-size: 1rem;
+  line-height: var(--pico-line-height);
+  padding-top: var(--pico-form-element-spacing-vertical);
+  padding-bottom: var(--pico-form-element-spacing-vertical);
+  height: calc(var(--pico-line-height) * 1em
+               + var(--pico-form-element-spacing-vertical) * 2
+               + var(--pico-border-width) * 2);
+  box-sizing: border-box;
+  flex: 0 0 auto;
+  white-space: nowrap;
+}
 .error { background: var(--pico-form-element-invalid-border-color); color: var(--pico-contrast-inverse); }
 small.muted { color: var(--pico-muted-color); font-weight: normal; }
 

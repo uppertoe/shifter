@@ -266,6 +266,63 @@ def test_pay_single_shift(client, conn):
     assert row["paid_note"] == "cash"
 
 
+def test_pay_shift_includes_unpaid_expenses_when_checkbox_set(client, conn):
+    """include_expenses=1 (the form default) settles the shift and any of its
+    unpaid expenses in one go with the same paid_on date."""
+    nid = conn.execute("INSERT INTO nannies (name) VALUES ('A')").lastrowid
+    sid = conn.execute(
+        "INSERT INTO shifts (nanny_id, start_time, end_time, source, confirmed,"
+        " created_by, updated_by) VALUES (?, '2026-05-04T07:00:00+10:00',"
+        " '2026-05-04T17:00:00+10:00', 'manual', 1, 'x', 'x')", (nid,),
+    ).lastrowid
+    eid_unpaid = conn.execute(
+        "INSERT INTO expenses (shift_id, amount_cents, description)"
+        " VALUES (?, 500, 'lunch')", (sid,),
+    ).lastrowid
+    eid_already_paid = conn.execute(
+        "INSERT INTO expenses (shift_id, amount_cents, description, paid_on)"
+        " VALUES (?, 200, 'parking', '2026-05-01')", (sid,),
+    ).lastrowid
+    client.post(
+        f"/shifts/{sid}/pay",
+        data={"paid_on": "2026-05-06", "include_expenses": "1"},
+        headers={"Remote-User": "alice"},
+    )
+    rows = {
+        r["id"]: r["paid_on"] for r in conn.execute(
+            "SELECT id, paid_on FROM expenses WHERE shift_id = ?", (sid,)
+        ).fetchall()
+    }
+    assert rows[eid_unpaid] == "2026-05-06"
+    # Already-paid expenses must not have their paid_on date overwritten.
+    assert rows[eid_already_paid] == "2026-05-01"
+
+
+def test_pay_shift_does_not_touch_expenses_without_checkbox(client, conn):
+    """Without include_expenses, only the shift is settled."""
+    nid = conn.execute("INSERT INTO nannies (name) VALUES ('A')").lastrowid
+    sid = conn.execute(
+        "INSERT INTO shifts (nanny_id, start_time, end_time, source, confirmed,"
+        " created_by, updated_by) VALUES (?, '2026-05-04T07:00:00+10:00',"
+        " '2026-05-04T17:00:00+10:00', 'manual', 1, 'x', 'x')", (nid,),
+    ).lastrowid
+    eid = conn.execute(
+        "INSERT INTO expenses (shift_id, amount_cents, description)"
+        " VALUES (?, 500, 'lunch')", (sid,),
+    ).lastrowid
+    client.post(
+        f"/shifts/{sid}/pay",
+        data={"paid_on": "2026-05-06"},  # no include_expenses key
+        headers={"Remote-User": "alice"},
+    )
+    assert conn.execute(
+        "SELECT paid_on FROM shifts WHERE id = ?", (sid,)
+    ).fetchone()["paid_on"] == "2026-05-06"
+    assert conn.execute(
+        "SELECT paid_on FROM expenses WHERE id = ?", (eid,)
+    ).fetchone()["paid_on"] is None
+
+
 def test_pay_shift_404_for_unknown_shift(client, conn):
     r = client.post(
         "/shifts/9999/pay",

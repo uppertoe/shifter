@@ -76,10 +76,17 @@
               <details class="confirm">
                 <summary class="confirm-trigger secondary outline">Mark paid</summary>
                 <form method="post" action="/shifts/{{ s.id }}/pay">
-                  <fieldset role="group">
+                  <label>Paid on
                     <input type="date" name="paid_on" value="{{ today_iso }}" required>
-                    <button type="submit">Confirm paid</button>
-                  </fieldset>
+                  </label>
+                  {% if v.unpaid_expenses_count %}
+                    <label class="inline-check">
+                      <input type="checkbox" name="include_expenses" value="1" checked>
+                      Also pay {{ v.unpaid_expenses_count }} expense{{ '' if v.unpaid_expenses_count == 1 else 's' }}
+                      ({{ format_cents(v.unpaid_expenses_total_cents) }})
+                    </label>
+                  {% endif %}
+                  <button type="submit">Confirm paid</button>
                 </form>
               </details>
             {% endif %}

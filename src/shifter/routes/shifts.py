@@ -46,12 +46,15 @@ def _shift_view(conn, settings: Settings, shift_row) -> dict:
     nanny = repos.get_nanny(conn, shift_row["nanny_id"])
     expenses = repos.list_expenses(conn, shift_row["id"])
     expenses_total = sum(int(e["amount_cents"]) for e in expenses)
+    unpaid_expenses = [e for e in expenses if e["paid_on"] is None]
     return {
         "shift": shift_row,
         "nanny": nanny,
         "computed": cs,
         "expenses": expenses,
         "expenses_total_cents": expenses_total,
+        "unpaid_expenses_count": len(unpaid_expenses),
+        "unpaid_expenses_total_cents": sum(int(e["amount_cents"]) for e in unpaid_expenses),
         "tz": settings.zoneinfo,
     }
 
@@ -379,10 +382,14 @@ def pay_shift(
     request: Request,
     paid_on: str = Form(...),
     paid_note: str = Form(""),
+    include_expenses: int = Form(0),
     conn=Depends(get_db),
     user: str = Depends(current_user),
 ):
-    """Mark a single shift paid. Date supplied by the caller; usually today."""
+    """Mark a single shift paid. By default the form sends include_expenses=1
+    so the shift's unpaid expenses are settled in the same payment; the user
+    can untick the checkbox to settle the shift on its own. An unchecked
+    checkbox simply isn't submitted, hence the default of 0."""
     shift = repos.get_shift(conn, shift_id)
     if shift is None:
         raise HTTPException(status.HTTP_404_NOT_FOUND)
@@ -394,6 +401,13 @@ def pay_shift(
         conn, [shift_id], paid_date,
         paid_note=paid_note.strip() or None, updated_by=user,
     )
+    if include_expenses:
+        unpaid_expense_ids = [
+            e["id"] for e in repos.list_expenses(conn, shift_id)
+            if e["paid_on"] is None
+        ]
+        if unpaid_expense_ids:
+            repos.mark_expenses_paid(conn, unpaid_expense_ids, paid_date)
     return RedirectResponse("/shifts", status_code=status.HTTP_303_SEE_OTHER)
 
 

@@ -338,8 +338,56 @@ button.copy-chip.copied .copy-key { color: rgba(255,255,255,0.85); }
 button.copy-chip .copy-val { font-weight: 500; font-variant-numeric: tabular-nums; }
 
 /* inline confirm pattern: click summary to reveal the destructive action.
-   <details><summary class="confirm-trigger">…</summary><form>…</form></details> */
+   <details><summary class="confirm-trigger">…</summary><form>…</form></details>
+
+   In tight row contexts (shifts list, dashboard cards, table cells) the
+   revealed body floats as a small popover anchored to the summary, so it
+   doesn't reflow surrounding rows. Free-standing confirms (e.g. on
+   /shifts/edit) keep the inline reflow behaviour. */
 details.confirm { display: inline-block; margin: 0; }
+.row-actions details.confirm,
+.pending-actions details.confirm,
+td details.confirm { position: relative; }
+
+.row-actions details.confirm[open] > form,
+.row-actions details.confirm[open] > p,
+.pending-actions details.confirm[open] > form,
+.pending-actions details.confirm[open] > p,
+td details.confirm[open] > form,
+td details.confirm[open] > p {
+  position: absolute;
+  z-index: 100;
+  top: calc(100% + 0.25rem);
+  right: 0;
+  min-width: 16rem;
+  background: var(--pico-card-background-color);
+  border: 1px solid var(--pico-muted-border-color);
+  border-radius: var(--pico-border-radius);
+  padding: 0.7rem;
+  box-shadow: 0 6px 18px rgba(0, 0, 0, 0.15);
+  margin: 0;
+}
+.row-actions details.confirm[open] > form > *,
+.pending-actions details.confirm[open] > form > *,
+td details.confirm[open] > form > * {
+  margin-bottom: 0.5rem;
+}
+.row-actions details.confirm[open] > form > *:last-child,
+.pending-actions details.confirm[open] > form > *:last-child,
+td details.confirm[open] > form > *:last-child {
+  margin-bottom: 0;
+}
+.inline-check {
+  display: flex;
+  align-items: center;
+  gap: 0.4rem;
+  font-size: 0.875rem;
+  margin: 0;
+}
+.inline-check input[type="checkbox"] {
+  margin: 0;
+  width: auto;
+}
 details.confirm summary {
   list-style: none;
   cursor: pointer;

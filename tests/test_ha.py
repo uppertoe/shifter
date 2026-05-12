@@ -72,13 +72,14 @@ def test_unscheduled_arrival_is_ignored(conn):
     assert conn.execute("SELECT COUNT(*) c FROM shifts").fetchone()["c"] == 0
 
 
-def test_arrival_event_when_nanny_already_arrived_is_ignored(conn):
-    """The nanny has a fresh open shift (state B) → no state-A waiting for
-    her → the arrival event has nothing to consume."""
+def test_arrival_event_when_nanny_already_arrived_attaches(conn):
+    """The nanny has a fresh open shift (state B) → no new shift to create,
+    but the event attaches to that shift so its snapshot lights up. This is
+    the auto-opener-then-HA case and the duplicate-HA case (two cameras)."""
     a, _ = _seed_two_nannies(conn)
     schedule.add_one_off(conn, nanny_id=a, on_date=date(2026, 5, 4),
                           start_time="07:00", end_time="18:00")
-    repos.create_shift(
+    sid = repos.create_shift(
         conn, nanny_id=a,
         start_time=datetime(2026, 5, 4, 7, 0, tzinfo=MEL).isoformat(),
         end_time=None, rate_override_cents=None, flat_rate_cents=None,
@@ -90,7 +91,9 @@ def test_arrival_event_when_nanny_already_arrived_is_ignored(conn):
         source="frigate-front", event_type_hint="arrival",
         settings=_settings(),
     )
-    assert r.resolution == "ignored"
+    assert r.resolution == "arrival"
+    assert r.shift_id == sid
+    # No duplicate shift created.
     assert conn.execute("SELECT COUNT(*) c FROM shifts").fetchone()["c"] == 1
 
 
@@ -550,3 +553,100 @@ def test_cannot_reattribute_already_resolved(conn):
     with pytest.raises(ValueError, match="already arrival"):
         ha.attribute_unresolved(conn, r.event_id, nanny_id=a,
                                   direction="arrival", user="eamonn")
+
+
+# --- arrival attach: HA fires after shift was already opened ----------------
+
+def test_arrival_hint_attaches_when_shift_already_open(conn):
+    """Auto-opener fired first → an HA arrival event for the same slot now
+    has no new shift to create, but should still attach to the open shift so
+    its snapshot lights up on the dashboard."""
+    a, _ = _seed_two_nannies(conn)
+    schedule.add_one_off(conn, nanny_id=a, on_date=date(2026, 5, 4),
+                          start_time="07:00", end_time="18:00")
+    # Simulate auto-opener creating the shift at the scheduled start
+    sid = repos.create_shift(
+        conn, nanny_id=a,
+        start_time=datetime(2026, 5, 4, 7, 0, tzinfo=MEL).isoformat(),
+        end_time=None,
+        rate_override_cents=None, flat_rate_cents=None, notes=None,
+        source="auto", confirmed=False, created_by="auto-opener",
+    )
+    r = ha.process_event(
+        conn,
+        occurred_at=datetime(2026, 5, 4, 7, 2, tzinfo=MEL),
+        source="frigate-front", event_type_hint="arrival",
+        settings=_settings(),
+    )
+    assert r.resolution == "arrival"
+    assert r.shift_id == sid                # attached to the auto-opened shift
+    assert r.nanny_id == a
+    # Only one shift exists — no duplicate created
+    assert conn.execute("SELECT COUNT(*) c FROM shifts").fetchone()["c"] == 1
+    # The auto-opened shift's start_time is untouched
+    row = conn.execute("SELECT start_time FROM shifts WHERE id = ?", (sid,)).fetchone()
+    assert row["start_time"] == datetime(2026, 5, 4, 7, 0, tzinfo=MEL).isoformat()
+    # The event row links to the shift so screenshots will surface via the join
+    evt = conn.execute(
+        "SELECT shift_id, resolution, resolution_note FROM ha_events WHERE id = ?",
+        (r.event_id,),
+    ).fetchone()
+    assert evt["shift_id"] == sid
+    assert evt["resolution"] == "arrival"
+    assert "attached" in (evt["resolution_note"] or "")
+
+
+def test_arrival_attach_ignored_when_two_nannies_expected(conn):
+    """Ambiguous: two nannies expected, both have open shifts. Don't guess."""
+    a, j = _seed_two_nannies(conn)
+    schedule.add_one_off(conn, nanny_id=a, on_date=date(2026, 5, 4),
+                          start_time="07:00", end_time="18:00")
+    schedule.add_one_off(conn, nanny_id=j, on_date=date(2026, 5, 4),
+                          start_time="07:00", end_time="18:00")
+    for nid in (a, j):
+        repos.create_shift(
+            conn, nanny_id=nid,
+            start_time=datetime(2026, 5, 4, 7, 0, tzinfo=MEL).isoformat(),
+            end_time=None,
+            rate_override_cents=None, flat_rate_cents=None, notes=None,
+            source="auto", confirmed=False, created_by="auto-opener",
+        )
+    r = ha.process_event(
+        conn,
+        occurred_at=datetime(2026, 5, 4, 7, 5, tzinfo=MEL),
+        source="frigate-front", event_type_hint="arrival",
+        settings=_settings(),
+    )
+    assert r.resolution == "ignored"
+    assert r.shift_id is None
+
+
+def test_arrival_attach_screenshots_join_through(conn):
+    """End-to-end: attach an arrival event to an auto-opened shift, upload a
+    screenshot against the event, confirm shots_for_shift returns it."""
+    from shifter import screenshots
+    a, _ = _seed_two_nannies(conn)
+    schedule.add_one_off(conn, nanny_id=a, on_date=date(2026, 5, 4),
+                          start_time="07:00", end_time="18:00")
+    sid = repos.create_shift(
+        conn, nanny_id=a,
+        start_time=datetime(2026, 5, 4, 7, 0, tzinfo=MEL).isoformat(),
+        end_time=None,
+        rate_override_cents=None, flat_rate_cents=None, notes=None,
+        source="auto", confirmed=False, created_by="auto-opener",
+    )
+    r = ha.process_event(
+        conn,
+        occurred_at=datetime(2026, 5, 4, 7, 2, tzinfo=MEL),
+        source="frigate-front", event_type_hint="arrival",
+        settings=_settings(),
+    )
+    # Insert a screenshot row directly — same shape as the webhook would.
+    conn.execute(
+        "INSERT INTO screenshots (ha_event_id, filename, content_type, size_bytes)"
+        " VALUES (?, ?, ?, ?)",
+        (r.event_id, "fake.jpg", "image/jpeg", 1234),
+    )
+    shots = screenshots.shots_for_shift(conn, sid)
+    assert shots["arrival"] is not None
+    assert shots["arrival"]["filename"] == "fake.jpg"

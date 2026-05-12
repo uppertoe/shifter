@@ -10,15 +10,19 @@ the noise. The resolver maps each event onto the shift state machine:
     D: Closed, unconfirmed           (shifts row, end_time set, confirmed=0)
     E: Confirmed                     (shifts row, end_time set, confirmed=1)
 
-Events either *consume* a shift's awaiting slot or are *ignored*:
+Events either *consume* a shift's awaiting slot, *attach* to an existing
+one, or are *ignored*:
 
 * Arrival event matches state A → consume → creates a state-B shift.
+* Arrival event with state A already consumed (auto-opener or earlier HA
+  event opened the shift) → attach → event is recorded with shift_id so
+  its snapshot surfaces on the dashboard card.
 * Departure event matches a unique state-B shift → consume → closes to D.
 * No-hint event: try arrival first, then fresh-departure.
-* Anything else (no candidate, ambiguous candidates, stale shift, already-
-  arrived, no schedule) → ``ignored``. There is no longer an "unresolved
-  events" queue under this model — the schedule does the filtering, and
-  shifts (states C and D) are the unit that needs human attention.
+* Anything else (no candidate, ambiguous candidates, stale shift, no
+  schedule) → ``ignored``. There is no longer an "unresolved events"
+  queue under this model — the schedule does the filtering, and shifts
+  (states C and D) are the unit that needs human attention.
 
 Every HA-driven close flips ``confirmed`` back to 0 on the shift, because
 auto-filled end times are a convenience that always need human review
@@ -136,6 +140,36 @@ def _try_departure(
     if len(fresh) == 1:
         return fresh[0]
     return None
+
+
+def _try_attach_arrival(
+    conn: sqlite3.Connection, occurred_at: datetime, settings: Settings
+):
+    """When an arrival event arrives *after* the shift was already opened
+    (auto-opener fired first, or an earlier HA event), there's no new shift
+    to create — but the event itself still carries useful context (e.g. a
+    snapshot HA is about to upload). Attach the event to the existing shift
+    so the snapshot surfaces on the shift's dashboard card.
+
+    Conservative match: only attach when exactly one nanny is expected today
+    and that nanny has exactly one fresh open shift. Anything ambiguous
+    falls through to ``ignored`` — same philosophy as ``_try_arrival``.
+
+    Returns (nanny_id, shift_id, expected_shift_id) or None.
+    """
+    on_date = occurred_at.date()
+    expected = schedule.expected_on_date(conn, on_date, include_cancelled=False)
+    distinct_nannies = {e.nanny_id for e in expected}
+    if len(distinct_nannies) != 1:
+        return None
+    nanny_id = next(iter(distinct_nannies))
+    fresh = _fresh_open_shifts(conn, as_of=occurred_at, settings=settings)
+    open_for_nanny = [s for s in fresh if s["nanny_id"] == nanny_id]
+    if len(open_for_nanny) != 1:
+        return None
+    slots_for_nanny = [e for e in expected if e.nanny_id == nanny_id]
+    exp_id = slots_for_nanny[0].expected_id if len(slots_for_nanny) == 1 else None
+    return nanny_id, open_for_nanny[0]["id"], exp_id
 
 
 def _insert_event(
@@ -303,6 +337,22 @@ def process_event(
                 conn, nanny_id=nanny_id, expected_shift_id=exp_id,
                 occurred_at=occurred_at, source=source, event_type_hint=event_type_hint,
             )
+        # No new shift to create — but if the shift already exists (auto-opener
+        # fired, or a prior HA event), attach this event to it so the snapshot
+        # links through. Shift start_time is left alone (the auto-opener used
+        # the scheduled start; we don't want to retroactively shift it).
+        attach = _try_attach_arrival(conn, occurred_at, settings)
+        if attach is not None:
+            n_id, s_id, e_id = attach
+            eid = _insert_event(
+                conn,
+                occurred_at=occurred_at, source=source,
+                event_type_hint=event_type_hint,
+                nanny_id=n_id, shift_id=s_id, expected_shift_id=e_id,
+                resolution="arrival",
+                note="attached to existing open shift",
+            )
+            return EventResult(eid, "arrival", n_id, s_id, "attached")
         return _record("ignored", "hint=arrival but 0 or >1 candidate nannies on the schedule")
 
     if event_type_hint == "departure":

@@ -3,10 +3,10 @@ from __future__ import annotations
 from datetime import date, datetime, timedelta
 from pathlib import Path
 
-from fastapi import APIRouter, Depends, HTTPException, Request, status
+from fastapi import APIRouter, Depends, Form, HTTPException, Request, status
 from fastapi.responses import FileResponse, HTMLResponse
 
-from shifter import ha, pay, repos, screenshots
+from shifter import ha, pay, repos, schedule, screenshots
 from shifter.auth import current_user
 from shifter.config import Settings, get_settings
 from shifter.main import get_db, templates
@@ -63,6 +63,21 @@ def _build_context(conn, settings: Settings, user: str) -> dict:
     def _is_visible(shift) -> bool:
         return shift["nanny_id"] in visible_nanny_ids
 
+    expected_today_all = schedule.pending_for_date(conn, today, tz=tz)
+    expected_today = []
+    for slot in expected_today_all:
+        if slot.nanny_id not in visible_nanny_ids:
+            continue
+        start_dt, end_dt = schedule.slot_window(slot, tz)
+        expected_today.append({
+            "slot": slot,
+            "nanny": repos.get_nanny(conn, slot.nanny_id),
+            "start_dt": start_dt,
+            "end_dt": end_dt,
+            "is_due": start_dt <= now,
+            "minutes_to_start": int((start_dt - now).total_seconds() // 60),
+        })
+
     open_shifts = [s for s in repos.list_shifts(conn, open_only=True)
                    if _is_visible(s)]
     open_views = []
@@ -115,6 +130,7 @@ def _build_context(conn, settings: Settings, user: str) -> dict:
         "week_start": week_start,
         "week_hours": week_hours,
         "week_pay_cents": week_pay,
+        "expected_today": expected_today,
         "open_shifts": open_views,
         "now_local_input": now.strftime("%Y-%m-%dT%H:%M"),
         "pending_shifts": pending_views,
@@ -144,3 +160,128 @@ def index(
     return templates.TemplateResponse(
         request, "dashboard.html", _build_context(conn, settings, user),
     )
+
+
+# --- expected-shift actions (dashboard surface) ------------------------------
+#
+# Endpoints used by the "Expected today" section. Each returns the dashboard
+# OOB refresh fragment so the section list, stats and any cascades stay in
+# sync after the row's status changes. The row itself disappears from the
+# Expected section as soon as a matching shift exists (post-Open) or the slot
+# is cancelled.
+
+def _get_expected_or_404(conn, expected_id: int):
+    row = conn.execute(
+        "SELECT * FROM expected_shifts WHERE id = ?", (expected_id,)
+    ).fetchone()
+    if row is None:
+        raise HTTPException(status.HTTP_404_NOT_FOUND, "no such expected shift")
+    return row
+
+
+def _expected_slot(conn, expected_id: int) -> schedule.ExpectedSlot:
+    r = conn.execute(
+        "SELECT e.*, n.name AS nanny_name FROM expected_shifts e"
+        " JOIN nannies n ON n.id = e.nanny_id WHERE e.id = ?",
+        (expected_id,),
+    ).fetchone()
+    if r is None:
+        raise HTTPException(status.HTTP_404_NOT_FOUND, "no such expected shift")
+    return schedule.ExpectedSlot(
+        expected_id=r["id"],
+        nanny_id=r["nanny_id"],
+        nanny_name=r["nanny_name"],
+        date=date.fromisoformat(r["date"]),
+        start_time=r["start_time"],
+        end_time=r["end_time"],
+        source=r["source"],
+        cancelled=bool(r["cancelled"]),
+        pattern_id=r["pattern_id"],
+    )
+
+
+@router.post("/dashboard/expected/{expected_id}/open", response_class=HTMLResponse)
+def expected_open(
+    expected_id: int,
+    request: Request,
+    conn=Depends(get_db),
+    settings: Settings = Depends(get_settings),
+    user: str = Depends(current_user),
+):
+    slot = _expected_slot(conn, expected_id)
+    # Always open at the scheduled start — same time the auto-opener would
+    # use. The row only appears when no matching shift exists, so this can't
+    # collide with an already-open shift. If the nanny actually arrived
+    # earlier/later, the human edits the shift in the Open shifts section.
+    scheduled_start, _ = schedule.slot_window(slot, settings.zoneinfo)
+    repos.create_shift(
+        conn,
+        nanny_id=slot.nanny_id,
+        start_time=scheduled_start.isoformat(),
+        end_time=None,
+        rate_override_cents=None,
+        flat_rate_cents=None,
+        notes=None,
+        source="manual",
+        confirmed=False,
+        created_by=user,
+    )
+    return HTMLResponse(render_oob_refresh(conn, settings, user))
+
+
+@router.post("/dashboard/expected/{expected_id}/cancel", response_class=HTMLResponse)
+def expected_cancel(
+    expected_id: int,
+    request: Request,
+    conn=Depends(get_db),
+    settings: Settings = Depends(get_settings),
+    user: str = Depends(current_user),
+):
+    _get_expected_or_404(conn, expected_id)
+    schedule.cancel_expected(conn, expected_id)
+    return HTMLResponse(render_oob_refresh(conn, settings, user))
+
+
+@router.get("/dashboard/expected/{expected_id}/edit", response_class=HTMLResponse)
+def expected_edit(
+    expected_id: int,
+    request: Request,
+    conn=Depends(get_db),
+    settings: Settings = Depends(get_settings),
+    user: str = Depends(current_user),
+):
+    slot = _expected_slot(conn, expected_id)
+    return templates.TemplateResponse(
+        request,
+        "dashboard/_expected_editor.html",
+        {"slot": slot, "nanny": repos.get_nanny(conn, slot.nanny_id), "tz": settings.zoneinfo},
+    )
+
+
+@router.get("/dashboard/expected/{expected_id}/cancel-edit", response_class=HTMLResponse)
+def expected_cancel_edit(
+    expected_id: int,
+    request: Request,
+    conn=Depends(get_db),
+    settings: Settings = Depends(get_settings),
+    user: str = Depends(current_user),
+):
+    """Revert an opened editor back to the read-only row."""
+    return HTMLResponse(render_oob_refresh(conn, settings, user))
+
+
+@router.post("/dashboard/expected/{expected_id}/update", response_class=HTMLResponse)
+def expected_update(
+    expected_id: int,
+    request: Request,
+    start_time: str = Form(...),
+    end_time: str = Form(...),
+    conn=Depends(get_db),
+    settings: Settings = Depends(get_settings),
+    user: str = Depends(current_user),
+):
+    _get_expected_or_404(conn, expected_id)
+    schedule.update_expected_times(
+        conn, expected_id, start_time=start_time, end_time=end_time,
+    )
+    return HTMLResponse(render_oob_refresh(conn, settings, user))

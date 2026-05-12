@@ -4,9 +4,11 @@
             row_id (the outer <article id> we should swap on save).
    Wrapped in an <article> so it cleanly outerHTML-swaps the card it replaces.
 #}
-<article id="{{ row_id }}" class="pending-shift inline-editing">
+<article id="{{ row_id }}" class="pending-shift inline-editing"
+         style="--chip-bg: {{ nanny_color(nanny.id) }};">
   <header class="inline-editor-head">
-    <strong>Edit shift {{ shift.id }}</strong>
+    <strong class="nanny-chip">{{ nanny.name }}</strong>
+    <small class="muted">edit shift #{{ shift.id }}</small>
   </header>
   <form hx-post="/shifts/{{ shift.id }}/inline-save"
         hx-target="#{{ row_id }}"
@@ -33,7 +35,10 @@
       <button type="submit">
         {% if confirm_on_save %}Save &amp; confirm{% else %}Save{% endif %}
       </button>
-      <small class="muted">Refresh page to discard changes</small>
+      <button type="button" class="secondary outline"
+              hx-get="/shifts/{{ shift.id }}/cancel-edit"
+              hx-target="#{{ row_id }}"
+              hx-swap="outerHTML">Cancel</button>
     </div>
   </form>
 

@@ -1,0 +1,47 @@
+<section id="dashboard-expected"{% if oob %} hx-swap-oob="outerHTML"{% endif %}>
+  {% if expected_today %}
+  <h2>Expected today</h2>
+  {% for v in expected_today %}
+    {% set row_id = "expected-" ~ v.slot.expected_id %}
+    <article id="{{ row_id }}" class="pending-shift expected-row" style="--chip-bg: {{ nanny_color(v.nanny.id) }};">
+      <div class="pending-meta">
+        <strong class="nanny-chip">{{ v.nanny.name }}</strong>
+        <small class="muted">
+          {{ v.slot.start_time }}–{{ v.slot.end_time }}
+          {% if v.slot.source == 'manual' %}· one-off{% endif %}
+        </small>
+        <small class="muted">
+          {% if v.is_due %}
+            <strong>due now</strong> · auto-opens shortly
+          {% elif v.minutes_to_start < 60 %}
+            starts in {{ v.minutes_to_start }}m
+          {% else %}
+            starts at {{ format_dt(v.start_dt.isoformat(), tz) }}
+          {% endif %}
+        </small>
+      </div>
+      <div class="pending-actions">
+        <form method="post"
+              action="/dashboard/expected/{{ v.slot.expected_id }}/open"
+              hx-post="/dashboard/expected/{{ v.slot.expected_id }}/open"
+              hx-target="#{{ row_id }}"
+              hx-swap="outerHTML">
+          <button type="submit">Start shift</button>
+        </form>
+        <button type="button" class="secondary outline"
+                hx-get="/dashboard/expected/{{ v.slot.expected_id }}/edit"
+                hx-target="#{{ row_id }}"
+                hx-swap="outerHTML">Edit times</button>
+        <form method="post"
+              action="/dashboard/expected/{{ v.slot.expected_id }}/cancel"
+              hx-post="/dashboard/expected/{{ v.slot.expected_id }}/cancel"
+              hx-target="#{{ row_id }}"
+              hx-swap="outerHTML"
+              hx-confirm="Cancel this expected shift for today?">
+          <button type="submit" class="secondary outline">Cancel today</button>
+        </form>
+      </div>
+    </article>
+  {% endfor %}
+  {% endif %}
+</section>

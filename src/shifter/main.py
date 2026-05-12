@@ -12,6 +12,7 @@ from fastapi.templating import Jinja2Templates
 
 from shifter import db
 from shifter.config import get_settings
+from shifter.schedule import auto_open_loop
 from shifter.screenshots import cleanup_loop
 
 log = logging.getLogger("shifter")
@@ -80,15 +81,20 @@ async def lifespan(app: FastAPI):
 
     cleanup_conn = db.connect(settings.database_path)
     cleanup_task = asyncio.create_task(cleanup_loop(cleanup_conn, settings))
+    auto_open_conn = db.connect(settings.database_path)
+    auto_open_task = asyncio.create_task(auto_open_loop(auto_open_conn, settings))
     try:
         yield
     finally:
-        cleanup_task.cancel()
-        try:
-            await cleanup_task
-        except asyncio.CancelledError:
-            pass
+        for task in (cleanup_task, auto_open_task):
+            task.cancel()
+        for task in (cleanup_task, auto_open_task):
+            try:
+                await task
+            except asyncio.CancelledError:
+                pass
         cleanup_conn.close()
+        auto_open_conn.close()
 
 
 app = FastAPI(title="shifter", lifespan=lifespan)

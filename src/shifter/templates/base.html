@@ -39,6 +39,17 @@
       input.dispatchEvent(new Event("change", { bubbles: true }));
     });
 
+    // Close any open <details class="confirm"> when the user clicks outside
+    // it. <details> doesn't get click-outside semantics for free, so we
+    // listen at document level and bulk-close. Same listener works for the
+    // shift close-end-time popup, delete confirms, and any future confirm
+    // surface that follows the same markup.
+    document.addEventListener("click", function (e) {
+      document.querySelectorAll("details.confirm[open]").forEach(function (d) {
+        if (!d.contains(e.target)) d.removeAttribute("open");
+      });
+    });
+
     // Toggle a target element's [hidden] attribute on click. Used for
     // accordion-style table rows where the form row spans the full table
     // width (colspan) — neither <details> nor CSS sibling selectors can

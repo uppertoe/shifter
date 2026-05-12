@@ -324,7 +324,7 @@ main > section:first-child { margin-block-start: 0; }
 .pending-shift.inline-editing .form-actions {
   display: flex; gap: 0.6rem; align-items: center; margin: 0.5rem 0 0;
 }
-.pending-shift.inline-editing .form-actions button { margin: 0; }
+.pending-shift.inline-editing .form-actions button { margin: 0; width: auto; }
 .pending-shift.inline-editing hr { margin: 1rem 0 0.5rem; }
 .pending-shift.inline-editing h4 { margin: 0 0 0.5rem; }
 .pending-actions a, .pending-actions button,

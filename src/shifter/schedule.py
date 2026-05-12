@@ -12,10 +12,14 @@ materialiser from clobbering them on the next run.
 
 from __future__ import annotations
 
+import asyncio
+import logging
 import sqlite3
 from dataclasses import dataclass
-from datetime import date, datetime, timedelta
+from datetime import date, datetime, time, timedelta
+from zoneinfo import ZoneInfo
 
+log = logging.getLogger("shifter.schedule")
 
 PROJECTION_WEEKS_AHEAD = 12
 
@@ -210,3 +214,117 @@ def expected_on_date(
         conn, start=on_date, end=on_date + timedelta(days=1),
         include_cancelled=include_cancelled,
     )
+
+
+# --- auto-opener -------------------------------------------------------------
+
+def slot_window(slot: ExpectedSlot, tz: ZoneInfo) -> tuple[datetime, datetime]:
+    """Concrete (start_dt, end_dt) for an expected slot. End wraps to the next
+    day when end_time <= start_time (overnight shift)."""
+    start_t = time.fromisoformat(slot.start_time)
+    end_t = time.fromisoformat(slot.end_time)
+    start_dt = datetime.combine(slot.date, start_t, tzinfo=tz)
+    end_date = slot.date + timedelta(days=1) if end_t <= start_t else slot.date
+    end_dt = datetime.combine(end_date, end_t, tzinfo=tz)
+    return start_dt, end_dt
+
+
+def _slot_opened(conn: sqlite3.Connection, slot: ExpectedSlot, *, tz: ZoneInfo) -> bool:
+    """True iff a shifts row already covers this expected slot. Overlap check:
+    the shift starts before the slot ends and either is still open or ended
+    after the slot started."""
+    start_dt, end_dt = slot_window(slot, tz)
+    row = conn.execute(
+        "SELECT 1 FROM shifts "
+        " WHERE nanny_id = ?"
+        "   AND start_time < ?"
+        "   AND (end_time IS NULL OR end_time > ?)"
+        " LIMIT 1",
+        (slot.nanny_id, end_dt.isoformat(), start_dt.isoformat()),
+    ).fetchone()
+    return row is not None
+
+
+def pending_for_date(
+    conn: sqlite3.Connection, on_date: date, *, tz: ZoneInfo
+) -> list[ExpectedSlot]:
+    """Today's expected slots that haven't been matched by a shift yet —
+    the queue the dashboard shows so the human can adjust times, open early,
+    or cancel before the auto-opener fires."""
+    return [
+        s for s in expected_on_date(conn, on_date, include_cancelled=False)
+        if not _slot_opened(conn, s, tz=tz)
+    ]
+
+
+def auto_open_due(
+    conn: sqlite3.Connection, *, now: datetime, settings
+) -> list[int]:
+    """Open shifts for any expected slot whose scheduled window is in progress
+    and that doesn't already have a matching shift. Returns the ids of any
+    shifts created.
+
+    Scans today AND yesterday so overnight shifts (e.g. 19:00 Mon → 06:00 Tue)
+    get opened correctly if the app restarts mid-shift.
+
+    The created shift starts at the scheduled start, not at `now` — the
+    timeline reflects the schedule rather than polling jitter. confirmed=0 so
+    a human still reviews it (same as HA-sourced shifts).
+    """
+    from shifter import repos  # local import to avoid module cycle
+
+    tz = settings.zoneinfo
+    today = now.astimezone(tz).date()
+    created: list[int] = []
+    for d in (today - timedelta(days=1), today):
+        for slot in expected_on_date(conn, d, include_cancelled=False):
+            start_dt, end_dt = slot_window(slot, tz)
+            if start_dt > now or end_dt <= now:
+                continue
+            if _slot_opened(conn, slot, tz=tz):
+                continue
+            sid = repos.create_shift(
+                conn,
+                nanny_id=slot.nanny_id,
+                start_time=start_dt.isoformat(),
+                end_time=None,
+                rate_override_cents=None,
+                flat_rate_cents=None,
+                notes=None,
+                source="auto",
+                confirmed=False,
+                created_by="auto-opener",
+            )
+            created.append(sid)
+    return created
+
+
+def update_expected_times(
+    conn: sqlite3.Connection, expected_id: int, *,
+    start_time: str, end_time: str,
+) -> None:
+    """One-off override of an expected_shifts row's times (e.g. today's slot
+    runs 07:30–18:30 instead of the pattern's 07:00–18:00). Does not touch
+    the underlying schedule_pattern."""
+    conn.execute(
+        "UPDATE expected_shifts SET start_time = ?, end_time = ? WHERE id = ?",
+        (start_time, end_time, expected_id),
+    )
+
+
+async def auto_open_loop(
+    conn: sqlite3.Connection, settings, *, interval_seconds: int = 60
+) -> None:
+    """Background task: check every interval for expected slots whose start
+    time has passed and open a shift for each. Cheap to run; one SELECT per
+    pending slot."""
+    while True:
+        try:
+            now = datetime.now(settings.zoneinfo)
+            created = auto_open_due(conn, now=now, settings=settings)
+            if created:
+                log.info("Auto-opened %d scheduled shift(s): %s",
+                         len(created), created)
+        except Exception:
+            log.exception("Auto-open loop failed")
+        await asyncio.sleep(interval_seconds)

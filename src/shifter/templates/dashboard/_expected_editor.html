@@ -1,0 +1,22 @@
+<article id="expected-{{ slot.expected_id }}" class="pending-shift expected-row editing"
+         style="--chip-bg: {{ nanny_color(nanny.id) }};">
+  <form method="post"
+        action="/dashboard/expected/{{ slot.expected_id }}/update"
+        hx-post="/dashboard/expected/{{ slot.expected_id }}/update"
+        hx-target="#expected-{{ slot.expected_id }}"
+        hx-swap="outerHTML"
+        class="expected-editor">
+    <strong class="nanny-chip">{{ nanny.name }}</strong>
+    <label>Start
+      <input type="time" name="start_time" value="{{ slot.start_time }}" required>
+    </label>
+    <label>End
+      <input type="time" name="end_time" value="{{ slot.end_time }}" required>
+    </label>
+    <button type="submit">Save</button>
+    <button type="button" class="secondary outline"
+            hx-get="/dashboard/expected/{{ slot.expected_id }}/cancel-edit"
+            hx-target="#expected-{{ slot.expected_id }}"
+            hx-swap="outerHTML">Cancel</button>
+  </form>
+</article>

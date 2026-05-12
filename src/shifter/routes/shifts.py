@@ -317,6 +317,7 @@ def inline_editor(
     shift = repos.get_shift(conn, shift_id)
     if shift is None:
         raise HTTPException(status.HTTP_404_NOT_FOUND)
+    nanny = repos.get_nanny(conn, shift["nanny_id"])
     expenses = repos.list_expenses(conn, shift_id)
     expenses_total = sum(int(e["amount_cents"]) for e in expenses)
     start_local = to_local_input(shift["start_time"], settings.zoneinfo)
@@ -327,6 +328,7 @@ def inline_editor(
         {
             "user": user,
             "shift": shift,
+            "nanny": nanny,
             "start_local": start_local,
             "end_local": end_local,
             "expenses": expenses,
@@ -335,6 +337,20 @@ def inline_editor(
             "row_id": row_id,
         },
     )
+
+
+@router.get("/{shift_id}/cancel-edit", response_class=HTMLResponse)
+def cancel_edit(
+    shift_id: int,
+    request: Request,
+    conn=Depends(get_db),
+    settings: Settings = Depends(get_settings),
+    user: str = Depends(current_user),
+):
+    """Discard the inline editor and re-render the default dashboard state.
+    No write — the OOB refresh swaps the open/pending sections back to their
+    pre-edit cards."""
+    return _htmx_swap_with_oob(request, conn, settings, user)
 
 
 @router.post("/{shift_id}/inline-save", response_class=HTMLResponse)

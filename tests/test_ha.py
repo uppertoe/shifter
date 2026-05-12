@@ -621,6 +621,88 @@ def test_arrival_attach_ignored_when_two_nannies_expected(conn):
     assert r.shift_id is None
 
 
+def test_arrival_before_scheduled_start_clamps_to_schedule(conn):
+    """End-to-end: HA fires arrival 16 min early. floor_15min would round to
+    06:30, but the clamp in _rounded_arrival_start lifts the shift start to
+    07:00 — the rostered time. Early arrivals never get credited beyond the
+    schedule.
+    """
+    a, _ = _seed_two_nannies(conn)
+    schedule.add_one_off(conn, nanny_id=a, on_date=date(2026, 5, 4),
+                          start_time="07:00", end_time="18:00")
+    r = ha.process_event(
+        conn,
+        occurred_at=datetime(2026, 5, 4, 6, 44, tzinfo=MEL),
+        source="frigate-front", event_type_hint="arrival",
+        settings=_settings(),
+    )
+    assert r.resolution == "arrival"
+    shift = conn.execute("SELECT * FROM shifts WHERE id = ?", (r.shift_id,)).fetchone()
+    assert shift["start_time"] == datetime(2026, 5, 4, 7, 0, tzinfo=MEL).isoformat()
+
+
+def test_arrival_just_before_scheduled_start_clamps_to_schedule(conn):
+    """Same as above but on the other side of the 15-min mark: floor_15min
+    of 06:46 is 06:45, still before 07:00, so the clamp still wins."""
+    a, _ = _seed_two_nannies(conn)
+    schedule.add_one_off(conn, nanny_id=a, on_date=date(2026, 5, 4),
+                          start_time="07:00", end_time="18:00")
+    r = ha.process_event(
+        conn,
+        occurred_at=datetime(2026, 5, 4, 6, 46, tzinfo=MEL),
+        source="frigate-front", event_type_hint="arrival",
+        settings=_settings(),
+    )
+    assert r.resolution == "arrival"
+    shift = conn.execute("SELECT * FROM shifts WHERE id = ?", (r.shift_id,)).fetchone()
+    assert shift["start_time"] == datetime(2026, 5, 4, 7, 0, tzinfo=MEL).isoformat()
+
+
+def test_false_alarm_then_real_arrival_within_debounce(conn):
+    """An early false-alarm event (cat, delivery, etc.) creates the shift,
+    and the real arrival 4 min later from the same source is suppressed by
+    same-source debounce. The shift is correct (starts at scheduled 07:00),
+    but only ONE event is recorded — meaning only the false-alarm snapshot
+    is attached, not the real one. Documented here so any future change to
+    photo-selection (e.g. preferring the latest snapshot) doesn't silently
+    regress this corner.
+    """
+    a, _ = _seed_two_nannies(conn)
+    schedule.add_one_off(conn, nanny_id=a, on_date=date(2026, 5, 4),
+                          start_time="07:00", end_time="18:00")
+    # 06:40 — false alarm
+    r1 = ha.process_event(
+        conn,
+        occurred_at=datetime(2026, 5, 4, 6, 40, tzinfo=MEL),
+        source="frigate-front", event_type_hint="arrival",
+        settings=_settings(),
+    )
+    assert r1.resolution == "arrival"
+    shift = conn.execute(
+        "SELECT * FROM shifts WHERE id = ?", (r1.shift_id,)
+    ).fetchone()
+    assert shift["start_time"] == datetime(2026, 5, 4, 7, 0, tzinfo=MEL).isoformat()
+
+    # 06:44 — real nanny, same camera, 4 min later → debounced
+    r2 = ha.process_event(
+        conn,
+        occurred_at=datetime(2026, 5, 4, 6, 44, tzinfo=MEL),
+        source="frigate-front", event_type_hint="arrival",
+        settings=_settings(),
+    )
+    assert r2.resolution == "ignored"
+    assert r2.shift_id is None
+    # Only one shift, and the second event is recorded as ignored
+    assert conn.execute("SELECT COUNT(*) c FROM shifts").fetchone()["c"] == 1
+    evt = conn.execute(
+        "SELECT resolution, shift_id, resolution_note FROM ha_events WHERE id = ?",
+        (r2.event_id,),
+    ).fetchone()
+    assert evt["resolution"] == "ignored"
+    assert evt["shift_id"] is None
+    assert "debounce" in (evt["resolution_note"] or "")
+
+
 def test_arrival_attach_screenshots_join_through(conn):
     """End-to-end: attach an arrival event to an auto-opened shift, upload a
     screenshot against the event, confirm shots_for_shift returns it."""

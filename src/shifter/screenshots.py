@@ -29,6 +29,26 @@ ALLOWED_CONTENT_TYPES = {
 }
 
 
+def _write_screenshot(
+    settings: Settings,
+    *,
+    prefix: str,
+    content: bytes,
+    content_type: str,
+    taken_at: datetime,
+) -> tuple[str, int]:
+    ext = ALLOWED_CONTENT_TYPES.get(content_type)
+    if ext is None:
+        raise ValueError(f"Unsupported content type: {content_type}")
+    rel_dir = Path(f"{taken_at.year:04d}") / f"{taken_at.month:02d}"
+    abs_dir = settings.screenshot_dir / rel_dir
+    abs_dir.mkdir(parents=True, exist_ok=True)
+    name = f"{prefix}_{secrets.token_hex(4)}.{ext}"
+    abs_path = abs_dir / name
+    abs_path.write_bytes(content)
+    return str(rel_dir / name), len(content)
+
+
 def store_screenshot(
     *,
     settings: Settings,
@@ -38,23 +58,35 @@ def store_screenshot(
     taken_at: datetime,
 ) -> tuple[str, int]:
     """Write the file to disk; return (relative_path, size_bytes)."""
-    ext = ALLOWED_CONTENT_TYPES.get(content_type)
-    if ext is None:
-        raise ValueError(f"Unsupported content type: {content_type}")
-    rel_dir = Path(f"{taken_at.year:04d}") / f"{taken_at.month:02d}"
-    abs_dir = settings.screenshot_dir / rel_dir
-    abs_dir.mkdir(parents=True, exist_ok=True)
-    name = f"{ha_event_id}_{secrets.token_hex(4)}.{ext}"
-    abs_path = abs_dir / name
-    abs_path.write_bytes(content)
-    return str(rel_dir / name), len(content)
+    return _write_screenshot(
+        settings, prefix=str(ha_event_id), content=content,
+        content_type=content_type, taken_at=taken_at,
+    )
+
+
+def store_signal_screenshot(
+    *,
+    settings: Settings,
+    ha_signal_id: int,
+    content: bytes,
+    content_type: str,
+    taken_at: datetime,
+) -> tuple[str, int]:
+    """Write a signal screenshot to disk; return (relative_path, size_bytes).
+    Caller is responsible for updating ha_signals.snapshot_path in the DB.
+    """
+    return _write_screenshot(
+        settings, prefix=f"sig{ha_signal_id}", content=content,
+        content_type=content_type, taken_at=taken_at,
+    )
 
 
 def shots_for_shift(conn: sqlite3.Connection, shift_id: int) -> dict:
     """Return the earliest arrival snapshot and the latest departure snapshot
-    for a shift, joined via ha_events. Either may be missing.
+    for a shift.  Queries both the legacy ha_events/screenshots tables and the
+    newer ha_signals table so both old and new shifts display correctly.
     """
-    rows = conn.execute(
+    legacy = conn.execute(
         """
         SELECT s.filename, s.content_type, e.resolution, e.occurred_at
         FROM screenshots s
@@ -66,12 +98,32 @@ def shots_for_shift(conn: sqlite3.Connection, shift_id: int) -> dict:
         """,
         (shift_id,),
     ).fetchall()
-    arrival = next((r for r in rows if r["resolution"] == "arrival"), None)
-    departures = [r for r in rows if r["resolution"] == "departure"]
+
+    signals = conn.execute(
+        """
+        SELECT snapshot_path AS filename,
+               'image/jpeg'  AS content_type,
+               resolution,
+               occurred_at
+        FROM ha_signals
+        WHERE shift_id = ?
+          AND snapshot_path IS NOT NULL
+          AND resolution IN ('arrival', 'departure')
+        ORDER BY occurred_at ASC
+        """,
+        (shift_id,),
+    ).fetchall()
+
+    all_rows = sorted(
+        [dict(r) for r in legacy] + [dict(r) for r in signals],
+        key=lambda r: r["occurred_at"],
+    )
+    arrival = next((r for r in all_rows if r["resolution"] == "arrival"), None)
+    departures = [r for r in all_rows if r["resolution"] == "departure"]
     departure = departures[-1] if departures else None
     return {
-        "arrival": dict(arrival) if arrival else None,
-        "departure": dict(departure) if departure else None,
+        "arrival": arrival,
+        "departure": departure,
     }
 
 

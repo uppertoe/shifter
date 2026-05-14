@@ -9,7 +9,7 @@ from fastapi import (
 from fastapi.responses import HTMLResponse, JSONResponse, RedirectResponse
 from pydantic import BaseModel
 
-from shifter import ha, repos, screenshots
+from shifter import ha, ha_signals, repos, screenshots
 from shifter.auth import current_user, require_api_key
 from shifter.config import Settings, get_settings
 from shifter.main import get_db, templates
@@ -143,6 +143,116 @@ async def upload_screenshot(
         (event_id, rel_path, file.content_type, size),
     )
     return JSONResponse({"screenshot_id": cur.lastrowid, "filename": rel_path, "size_bytes": size})
+
+
+# ── Signal-based HA endpoints (new architecture) ────────────────────────────
+
+class SignalIn(BaseModel):
+    occurred_at: datetime
+    source: str
+    signal: str
+    person: str | None = None
+
+
+@router.post("/ha/signals", dependencies=[Depends(require_api_key)])
+def post_signal(
+    payload: SignalIn,
+    conn=Depends(get_db),
+    settings: Settings = Depends(get_settings),
+):
+    if payload.signal not in ha_signals.VALID_SIGNALS:
+        raise HTTPException(
+            status.HTTP_400_BAD_REQUEST,
+            f"signal must be one of {sorted(ha_signals.VALID_SIGNALS)}",
+        )
+
+    occurred = payload.occurred_at
+    if occurred.tzinfo is None:
+        occurred = occurred.replace(tzinfo=settings.zoneinfo)
+
+    result = ha_signals.process_signal(
+        conn,
+        occurred_at=occurred,
+        source=payload.source,
+        signal=payload.signal,
+        person=payload.person,
+        settings=settings,
+    )
+    return JSONResponse({
+        "signal_id": result.signal_id,
+        "resolution": result.resolution,
+        "nanny_id": result.nanny_id,
+        "shift_id": result.shift_id,
+        "note": result.note,
+    })
+
+
+@router.post("/ha/signals/{signal_id}/screenshot", dependencies=[Depends(require_api_key)])
+async def upload_signal_screenshot(
+    signal_id: int,
+    file: Annotated[UploadFile, File(...)],
+    conn=Depends(get_db),
+    settings: Settings = Depends(get_settings),
+):
+    sig = conn.execute(
+        "SELECT * FROM ha_signals WHERE id = ?", (signal_id,)
+    ).fetchone()
+    if sig is None:
+        raise HTTPException(status.HTTP_404_NOT_FOUND, "no such signal")
+
+    if file.content_type not in screenshots.ALLOWED_CONTENT_TYPES:
+        raise HTTPException(
+            status.HTTP_415_UNSUPPORTED_MEDIA_TYPE,
+            f"content type {file.content_type!r} not supported",
+        )
+    body = await file.read()
+    if not body:
+        raise HTTPException(status.HTTP_400_BAD_REQUEST, "empty body")
+
+    occurred = datetime.fromisoformat(sig["occurred_at"])
+    rel_path, size = screenshots.store_signal_screenshot(
+        settings=settings,
+        ha_signal_id=signal_id,
+        content=body,
+        content_type=file.content_type,
+        taken_at=occurred,
+    )
+    conn.execute(
+        "UPDATE ha_signals SET snapshot_path = ? WHERE id = ?",
+        (rel_path, signal_id),
+    )
+    return JSONResponse({"signal_id": signal_id, "filename": rel_path, "size_bytes": size})
+
+
+@router.get("/ha/state", dependencies=[Depends(require_api_key)])
+def ha_state(
+    conn=Depends(get_db),
+    settings: Settings = Depends(get_settings),
+):
+    """Derived Shifter state for debugging and HA polling."""
+    now = datetime.now(tz=settings.zoneinfo)
+    from shifter.ha import _fresh_open_shifts
+    fresh = _fresh_open_shifts(conn, as_of=now, settings=settings)
+    open_shift = fresh[0] if len(fresh) == 1 else None
+
+    homeowner_count = ha_signals._homeowner_count(conn, now)
+    watch_active, _ = ha_signals._departure_watch_active(conn, as_of=now, settings=settings)
+
+    last_signals = conn.execute(
+        "SELECT id, occurred_at, source, signal, person, resolution"
+        " FROM ha_signals ORDER BY occurred_at DESC LIMIT 10"
+    ).fetchall()
+
+    return JSONResponse({
+        "open_shift": {
+            "shift_id": open_shift["id"],
+            "start_time": open_shift["start_time"],
+            "nanny_id": open_shift["nanny_id"],
+        } if open_shift else None,
+        "homeowner_count": homeowner_count,
+        "departure_watch_active": watch_active,
+        "last_signals": [dict(r) for r in last_signals],
+    })
 
 
 # --- manual attribution UI (auth: regular user) -----------------------------

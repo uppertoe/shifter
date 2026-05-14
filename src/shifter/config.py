@@ -30,6 +30,17 @@ class Settings(BaseSettings):
     # e.g. "https://frigate.example.com" — no trailing slash.
     frigate_base_url: str = Field(default="")
 
+    # Signal-based HA architecture (ha_signals module).
+    # Window (minutes) before/after scheduled shift start where an access_granted
+    # is accepted as a nanny arrival.  Wide enough to absorb early/late arrivals.
+    pre_shift_window_minutes: int = Field(default=90, ge=1)
+    # Departure detection is suppressed for this many minutes after any
+    # access_granted signal — absorbs the homeowner's own entry PIR / Frigate hit.
+    entry_suppression_minutes: int = Field(default=3, ge=0)
+    # Window (minutes) after an access_denied in which an entry_pir is treated
+    # as a "let-in" fallback arrival (someone inside opened the door for the visitor).
+    failed_entry_window_minutes: int = Field(default=5, ge=1)
+
     # DEV ONLY. When true, auth is bypassed: routes assume `dev_user`
     # and the API key check is skipped. NEVER set in production.
     dev_mode: bool = Field(default=False)

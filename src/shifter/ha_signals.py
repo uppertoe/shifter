@@ -179,6 +179,76 @@ def _entry_suppressed(
     return row is not None
 
 
+def _homeowner_keypad_confirmed_since_return(
+    conn: sqlite3.Connection, occurred_at: datetime, shift
+) -> bool:
+    """True if access_granted was seen after the most recent homeowner_home since shift start.
+
+    Prevents Frigate from triggering a false departure when a homeowner's GPS fires
+    (homeowner_home) before they physically reach and use the front door keypad.
+    entry_pir is direction-aware (inside hallway) and does not need this guard.
+    """
+    row = conn.execute(
+        "SELECT occurred_at FROM ha_signals"
+        " WHERE signal = 'homeowner_home'"
+        "   AND occurred_at > ? AND occurred_at <= ?"
+        " ORDER BY occurred_at DESC LIMIT 1",
+        (shift["start_time"], occurred_at.isoformat()),
+    ).fetchone()
+    if row is None:
+        return True
+    last_return = row["occurred_at"]
+    confirmed = conn.execute(
+        "SELECT 1 FROM ha_signals WHERE signal = 'access_granted'"
+        " AND occurred_at > ? AND occurred_at <= ? LIMIT 1",
+        (last_return, occurred_at.isoformat()),
+    ).fetchone()
+    return confirmed is not None
+
+
+def _recently_pir_departed_shift(
+    conn: sqlite3.Connection, occurred_at: datetime
+) -> object:
+    """Return a shift closed by entry_pir in the last 30 s, or None.
+
+    When the nanny leaves, PIR fires first (inside hallway) and closes the shift.
+    Frigate fires seconds later as the person steps onto the verandah.  Resolving
+    that late Frigate signal as 'departure' on the just-closed shift causes
+    shots_for_shift() to surface the verandah photo (latest departure snapshot wins).
+    """
+    cutoff = (occurred_at - timedelta(seconds=30)).isoformat()
+    return conn.execute(
+        "SELECT s.id, s.nanny_id"
+        "  FROM shifts s"
+        "  JOIN ha_signals hs ON hs.shift_id = s.id"
+        " WHERE hs.signal = 'entry_pir'"
+        "   AND hs.resolution = 'departure'"
+        "   AND hs.occurred_at >= ? AND hs.occurred_at <= ?"
+        " ORDER BY hs.occurred_at DESC LIMIT 1",
+        (cutoff, occurred_at.isoformat()),
+    ).fetchone()
+
+
+def _try_attach_arrival_to_open_shift(
+    conn: sqlite3.Connection, occurred_at: datetime, settings: Settings
+) -> tuple[int | None, int | None]:
+    """(nanny_id, shift_id) when access_granted can be attached to an auto-created shift.
+
+    Returns non-None only when there is exactly one fresh open shift whose nanny
+    is also the only one expected within ±pre_shift_window_minutes.  Used so that
+    a keypad signal on an auto-created shift gets an 'arrival' resolution and its
+    verandah snapshot is surfaced by shots_for_shift().
+    """
+    fresh = _fresh_open_shifts(conn, as_of=occurred_at, settings=settings)
+    if len(fresh) != 1:
+        return None, None
+    shift = fresh[0]
+    nanny_id, _exp_id = _expected_in_window(conn, occurred_at, settings)
+    if nanny_id is None or nanny_id != shift["nanny_id"]:
+        return None, None
+    return nanny_id, shift["id"]
+
+
 def _failed_entry_recent(
     conn: sqlite3.Connection, occurred_at: datetime, settings: Settings
 ) -> bool:
@@ -313,6 +383,23 @@ def process_signal(
     if signal == "access_granted":
         fresh = _fresh_open_shifts(conn, as_of=occurred_at, settings=settings)
         if fresh:
+            # Shift already open — attach this keypad signal as an arrival marker
+            # so shots_for_shift() surfaces the verandah snapshot (auto-created shifts
+            # have no prior ha_signals 'arrival' row; nanny's first keypad wins because
+            # shots_for_shift picks the EARLIEST arrival snapshot).
+            nanny_id, shift_id = _try_attach_arrival_to_open_shift(
+                conn, occurred_at, settings
+            )
+            if nanny_id is not None:
+                _resolve(
+                    conn, signal_id,
+                    resolution="arrival", nanny_id=nanny_id, shift_id=shift_id,
+                    note="snapshot attached to existing open shift",
+                )
+                return SignalResult(
+                    signal_id, "arrival", nanny_id, shift_id,
+                    "snapshot attached to existing open shift",
+                )
             return _rec("open shift exists; homeowner return or duplicate")
 
         if _homeowner_count(conn, occurred_at) < 1:
@@ -337,7 +424,30 @@ def process_signal(
         if watch_active:
             if _entry_suppressed(conn, occurred_at, settings):
                 return _rec("departure suppressed — access_granted within suppression window")
+            if signal in ("front_deck_person", "verandah_person"):
+                if not _homeowner_keypad_confirmed_since_return(conn, occurred_at, open_shift):
+                    return _rec(
+                        "Frigate departure suppressed"
+                        " — homeowner GPS not yet confirmed by keypad"
+                    )
             return _do_departure(conn, signal_id, open_shift=open_shift, occurred_at=occurred_at)
+
+        # Late Frigate snapshot: attach to shift recently closed by entry_pir so that
+        # shots_for_shift() surfaces the verandah photo (latest departure snapshot wins).
+        if signal in ("front_deck_person", "verandah_person"):
+            recent = _recently_pir_departed_shift(conn, occurred_at)
+            if recent is not None:
+                _resolve(
+                    conn, signal_id,
+                    resolution="departure",
+                    nanny_id=recent["nanny_id"],
+                    shift_id=recent["id"],
+                    note="late Frigate snapshot attached to PIR-closed shift",
+                )
+                return SignalResult(
+                    signal_id, "departure", recent["nanny_id"], recent["id"],
+                    "late Frigate snapshot attached to PIR-closed shift",
+                )
 
         # Failed-entry fallback — only for entry_pir (PIR is direction-aware;
         # Frigate outdoor cameras can't confirm someone was let inside).

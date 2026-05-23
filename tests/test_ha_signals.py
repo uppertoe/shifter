@@ -268,6 +268,8 @@ def test_departure_via_front_deck_person(conn):
     nanny, hw = _seed(conn)
     _open_shift(conn, nanny)
     _presence_home(conn, hw, dt=datetime(2026, 5, 14, 17, 0, tzinfo=MEL))
+    # Homeowner confirmed by keypad before Frigate fires
+    _signal(conn, signal="access_granted", dt=datetime(2026, 5, 14, 17, 15, tzinfo=MEL))
 
     r = _signal(conn, signal="front_deck_person", source="frigate_front_deck",
                 dt=datetime(2026, 5, 14, 17, 30, tzinfo=MEL))
@@ -279,11 +281,101 @@ def test_departure_via_verandah_person(conn):
     nanny, hw = _seed(conn)
     _open_shift(conn, nanny)
     _presence_home(conn, hw, dt=datetime(2026, 5, 14, 17, 0, tzinfo=MEL))
+    # Homeowner confirmed by keypad before Frigate fires
+    _signal(conn, signal="access_granted", dt=datetime(2026, 5, 14, 17, 15, tzinfo=MEL))
 
     r = _signal(conn, signal="verandah_person", source="frigate_verandah",
                 dt=datetime(2026, 5, 14, 17, 30, tzinfo=MEL))
 
     assert r.resolution == "departure"
+
+
+def test_frigate_departure_suppressed_without_keypad_confirmation(conn):
+    """GPS fires homeowner_home but homeowner hasn't reached keypad yet — Frigate sees
+    homeowner approaching, not nanny departing.  Departure must be suppressed.
+    """
+    nanny, hw = _seed(conn)
+    _open_shift(conn, nanny)
+    # GPS ping — homeowner is still in car/driveway
+    _presence_home(conn, hw, dt=datetime(2026, 5, 14, 12, 9, tzinfo=MEL))
+    # No access_granted yet
+
+    # Frigate sees person on verandah 3 min later (homeowner approaching)
+    r = _signal(conn, signal="verandah_person", source="frigate_verandah",
+                dt=datetime(2026, 5, 14, 12, 12, tzinfo=MEL))
+
+    assert r.resolution == "recorded"
+    assert "GPS not yet confirmed" in r.note
+    assert conn.execute("SELECT end_time FROM shifts").fetchone()["end_time"] is None
+
+
+def test_late_frigate_snapshot_attaches_to_pir_closed_shift(conn):
+    """PIR closes shift; Frigate fires within 30 s as nanny steps onto verandah.
+    The Frigate signal should resolve as 'departure' on the just-closed shift so
+    shots_for_shift() surfaces the verandah photo.
+    """
+    nanny, hw = _seed(conn)
+    shift_id = _open_shift(conn, nanny)
+    _presence_home(conn, hw, dt=datetime(2026, 5, 14, 17, 0, tzinfo=MEL))
+    _signal(conn, signal="access_granted", dt=datetime(2026, 5, 14, 17, 15, tzinfo=MEL))
+
+    pir_at = datetime(2026, 5, 14, 18, 0, tzinfo=MEL)
+    r_pir = _signal(conn, signal="entry_pir", source="entry_pir", dt=pir_at)
+    assert r_pir.resolution == "departure"
+
+    frigate_at = pir_at + timedelta(seconds=20)
+    r_frigate = _signal(conn, signal="verandah_person", source="frigate_verandah",
+                        dt=frigate_at)
+
+    assert r_frigate.resolution == "departure"
+    assert r_frigate.shift_id == r_pir.shift_id
+    assert r_frigate.nanny_id == nanny
+
+
+def test_late_frigate_not_attached_after_30s(conn):
+    """Frigate more than 30 s after PIR departure is not attached."""
+    nanny, hw = _seed(conn)
+    _open_shift(conn, nanny)
+    _presence_home(conn, hw, dt=datetime(2026, 5, 14, 17, 0, tzinfo=MEL))
+    _signal(conn, signal="access_granted", dt=datetime(2026, 5, 14, 17, 15, tzinfo=MEL))
+
+    pir_at = datetime(2026, 5, 14, 18, 0, tzinfo=MEL)
+    _signal(conn, signal="entry_pir", source="entry_pir", dt=pir_at)
+
+    frigate_at = pir_at + timedelta(seconds=35)
+    r = _signal(conn, signal="verandah_person", source="frigate_verandah", dt=frigate_at)
+    assert r.resolution == "recorded"
+
+
+def test_access_granted_attaches_to_auto_created_shift(conn):
+    """When the shift is pre-created (auto) and access_granted fires within the
+    expected window, the signal resolves as 'arrival' on the existing shift so
+    shots_for_shift() can surface the keypad-time snapshot.  No new shift is created.
+    """
+    nanny, hw = _seed(conn)
+    _add_expected(conn, nanny)
+    shift_id = _open_shift(conn, nanny, start="2026-05-14T07:00:00+10:00")
+
+    r = _signal(conn, signal="access_granted",
+                dt=datetime(2026, 5, 14, 7, 5, tzinfo=MEL))
+
+    assert r.resolution == "arrival"
+    assert r.shift_id == shift_id
+    assert r.nanny_id == nanny
+    assert conn.execute("SELECT COUNT(*) FROM shifts").fetchone()[0] == 1
+
+
+def test_access_granted_not_attached_outside_window(conn):
+    """Homeowner returning hours after shift start should NOT attach as arrival."""
+    nanny, hw = _seed(conn)
+    _add_expected(conn, nanny, start="07:00")
+    _open_shift(conn, nanny, start="2026-05-14T07:00:00+10:00")
+
+    r = _signal(conn, signal="access_granted",
+                dt=datetime(2026, 5, 14, 16, 0, tzinfo=MEL))
+
+    assert r.resolution == "recorded"
+    assert conn.execute("SELECT COUNT(*) FROM shifts").fetchone()[0] == 1
 
 
 def test_departure_suppressed_by_entry_suppression(conn):

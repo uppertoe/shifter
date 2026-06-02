@@ -235,7 +235,7 @@ def ha_state(
     fresh = _fresh_open_shifts(conn, as_of=now, settings=settings)
     open_shift = fresh[0] if len(fresh) == 1 else None
 
-    homeowner_count = ha_signals._homeowner_count(conn, now)
+    homeowner_count = ha_signals._homeowner_count(conn, now, settings)
     watch_active, _ = ha_signals._departure_watch_active(conn, as_of=now, settings=settings)
 
     last_signals = conn.execute(

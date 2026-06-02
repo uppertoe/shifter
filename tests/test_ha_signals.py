@@ -477,7 +477,7 @@ def test_homeowner_count_two_people_both_home(conn):
     _presence_home(conn, "eamonn_upperton")
     _presence_home(conn, "puiyi_liew")
     as_of = datetime(2026, 5, 14, 10, 0, tzinfo=MEL)
-    assert ha_signals._homeowner_count(conn, as_of) == 2
+    assert ha_signals._homeowner_count(conn, as_of, _settings()) == 2
 
 
 def test_homeowner_count_one_away(conn):
@@ -486,7 +486,7 @@ def test_homeowner_count_one_away(conn):
     _presence_away(conn, "eamonn_upperton",
                    dt=datetime(2026, 5, 14, 8, 0, tzinfo=MEL))
     as_of = datetime(2026, 5, 14, 10, 0, tzinfo=MEL)
-    assert ha_signals._homeowner_count(conn, as_of) == 0
+    assert ha_signals._homeowner_count(conn, as_of, _settings()) == 0
 
 
 def test_homeowner_count_with_second_person_home(conn):
@@ -497,7 +497,28 @@ def test_homeowner_count_with_second_person_home(conn):
     _presence_home(conn, "puiyi_liew",
                    dt=datetime(2026, 5, 14, 9, 0, tzinfo=MEL))
     as_of = datetime(2026, 5, 14, 10, 0, tzinfo=MEL)
-    assert ha_signals._homeowner_count(conn, as_of) == 1
+    assert ha_signals._homeowner_count(conn, as_of, _settings()) == 1
+
+
+def test_homeowner_allowlist_ignores_unknown_person(conn):
+    """A stray 'test' person (e.g. from a smoke test) is ignored at ingestion and
+    never counts toward homeowner presence when an allowlist is configured."""
+    allowed = _settings(homeowner_persons="eamonn_upperton,puiyi_liew")
+    res = _signal(conn, signal="homeowner_home", source="smoke",
+                  person="test", settings=allowed)
+    assert res.resolution == "ignored"
+
+    # Even if such a row already existed in the DB, the count excludes it.
+    conn.execute(
+        "INSERT INTO ha_signals (occurred_at, source, signal, person)"
+        " VALUES ('2026-05-14T00:00:00+10:00', 'smoke', 'homeowner_home', 'test')"
+    )
+    as_of = datetime(2026, 5, 14, 10, 0, tzinfo=MEL)
+    assert ha_signals._homeowner_count(conn, as_of, allowed) == 0
+
+    # A real, allowlisted homeowner still counts.
+    _presence_home(conn, "eamonn_upperton")
+    assert ha_signals._homeowner_count(conn, as_of, allowed) == 1
 
 
 def test_departure_watch_activates_when_second_homeowner_home(conn):

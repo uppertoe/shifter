@@ -175,6 +175,32 @@
 .input-clear-btn:hover {
   filter: brightness(0.95);
 }
+
+/* Local datetime field rendered as separate native date + time inputs (see the
+   datetime_field macro). Splitting avoids the missing datetime-local picker on
+   some mobile browsers. The two inputs share a row and wrap on narrow screens so
+   the time control is always reachable; the hidden field carries the combined
+   value and is display:none, so flex ignores it. */
+.datetime-field {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: stretch;
+  gap: 0.25rem;
+  width: 100%;
+}
+.datetime-field .dt-date {
+  flex: 2 1 9rem;
+  min-width: 8rem;
+  margin-bottom: 0;
+}
+.datetime-field .dt-time {
+  flex: 1 1 6rem;
+  min-width: 6rem;
+  margin-bottom: 0;
+}
+.datetime-field .input-clear-btn {
+  flex: 0 0 auto;
+}
 .pill.paid    { background: #2e7d32; color: #fff; }
 .pill.unpaid  { background: #b88200; color: #fff; }
 .pill.pending { background: #1565c0; color: #fff; }

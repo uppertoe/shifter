@@ -1,0 +1,29 @@
+{# Reusable form-field macros. #}
+
+{# Cross-browser local datetime field.
+
+   <input type="datetime-local"> has no usable native picker on several mobile
+   browsers (notably Firefox for Android, where it degrades to date-only), so we
+   render two separate, universally-supported native inputs — <input type="date">
+   and <input type="time"> — and combine them into a hidden field carrying the
+   original `name` in 'YYYY-MM-DDTHH:MM' form. The server contract is unchanged.
+
+   The hidden value is kept in sync by the delegated [data-dt-field] handler in
+   base.html (fired on input/change, and reset by the × clear button).
+
+   value     — 'YYYY-MM-DDTHH:MM' or '' (prefill)
+   required  — mark date+time required (use for mandatory start times)
+   clearable — render a × button that empties the field (use for optional ends)
+#}
+{% macro datetime_field(name, value="", required=False, clearable=False) %}
+  <span class="datetime-field" data-dt-field>
+    <input type="hidden" name="{{ name }}" value="{{ value }}" data-dt-hidden>
+    <input type="date" class="dt-date" value="{{ value[:10] }}" data-dt-date
+           aria-label="Date"{% if required %} required{% endif %}>
+    <input type="time" class="dt-time" value="{{ value[11:16] }}" data-dt-time
+           aria-label="Time"{% if required %} required{% endif %}>
+    {% if clearable %}
+      <button type="button" class="input-clear-btn" aria-label="Clear {{ name }}">&times;</button>
+    {% endif %}
+  </span>
+{% endmacro %}

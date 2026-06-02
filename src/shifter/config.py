@@ -40,6 +40,12 @@ class Settings(BaseSettings):
     # Window (minutes) after an access_denied in which an entry_pir is treated
     # as a "let-in" fallback arrival (someone inside opened the door for the visitor).
     failed_entry_window_minutes: int = Field(default=5, ge=1)
+    # Comma-separated allowlist of tracked homeowner person identifiers (as sent in
+    # the `person` field of homeowner_home / homeowner_away signals). When set, only
+    # these persons count toward homeowner presence; presence signals from anyone
+    # else (e.g. a 'test' person posted by a smoke test) are ignored and can never
+    # poison the home/away count. Empty = accept any person (backwards compatible).
+    homeowner_persons: str = Field(default="")
 
     # DEV ONLY. When true, auth is bypassed: routes assume `dev_user`
     # and the API key check is skipped. NEVER set in production.
@@ -67,6 +73,10 @@ class Settings(BaseSettings):
     @property
     def allowed_user_set(self) -> frozenset[str]:
         return frozenset(u.strip() for u in self.allowed_users.split(",") if u.strip())
+
+    @property
+    def homeowner_person_set(self) -> frozenset[str]:
+        return frozenset(p.strip() for p in self.homeowner_persons.split(",") if p.strip())
 
 
 @lru_cache

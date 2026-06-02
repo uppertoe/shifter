@@ -26,17 +26,37 @@
       });
     });
 
-    // Clear-button next to optional date / datetime inputs. Markup is
-    //   <span class="input-clearable"><input ...><button class="input-clear-btn">×</button></span>
+    // Combine the date + time inputs of a [data-dt-field] (see _macros.html's
+    // datetime_field) into its hidden field as 'YYYY-MM-DDTHH:MM'. We split
+    // datetime-local into two natively-supported inputs because several mobile
+    // browsers (e.g. Firefox for Android) render no usable datetime-local picker.
+    function syncDtField(field) {
+      var d = field.querySelector("[data-dt-date]");
+      var t = field.querySelector("[data-dt-time]");
+      var h = field.querySelector("[data-dt-hidden]");
+      if (!d || !t || !h) return;
+      h.value = (d.value && t.value) ? (d.value + "T" + t.value) : "";
+    }
+    // Sync on every edit. Both events are needed: some mobile pickers fire only
+    // 'change', some only 'input'. Event-delegated so HTMX swaps just work.
+    ["input", "change"].forEach(function (evt) {
+      document.addEventListener(evt, function (e) {
+        var field = e.target.closest && e.target.closest("[data-dt-field]");
+        if (field) syncDtField(field);
+      });
+    });
+
+    // Clear-button for optional date / datetime fields. Empties every input in
+    // the wrapper (hidden + date + time) and fires change so syncDtField runs.
     // Event-delegated so HTMX-swapped fragments work without re-binding.
     document.addEventListener("click", function (e) {
       var btn = e.target.closest(".input-clear-btn");
-      if (!btn) return;
+      if (!btn || !btn.parentElement) return;
       e.preventDefault();
-      var input = btn.parentElement && btn.parentElement.querySelector("input");
-      if (!input) return;
-      input.value = "";
-      input.dispatchEvent(new Event("change", { bubbles: true }));
+      btn.parentElement.querySelectorAll("input").forEach(function (input) {
+        input.value = "";
+        input.dispatchEvent(new Event("change", { bubbles: true }));
+      });
     });
 
     // Close any open <details class="confirm"> when the user clicks outside

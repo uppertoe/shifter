@@ -4,6 +4,7 @@
             row_id (the outer <article id> we should swap on save).
    Wrapped in an <article> so it cleanly outerHTML-swaps the card it replaces.
 #}
+{% from "_macros.html" import datetime_field %}
 <article id="{{ row_id }}" class="pending-shift inline-editing"
          style="--chip-bg: {{ nanny_color(nanny.id) }};">
   <header class="inline-editor-head">
@@ -16,16 +17,10 @@
     <input type="hidden" name="confirm" value="{{ '1' if confirm_on_save else '0' }}">
     <div class="grid">
       <label>Start
-        <span class="input-clearable">
-          <input type="datetime-local" name="start_local" value="{{ start_local }}" required>
-          <button type="button" class="input-clear-btn" aria-label="Clear start time">&times;</button>
-        </span>
+        {{ datetime_field("start_local", start_local, required=True, clearable=True) }}
       </label>
       <label>End <small class="muted">(blank = leave open)</small>
-        <span class="input-clearable">
-          <input type="datetime-local" name="end_local" value="{{ end_local }}">
-          <button type="button" class="input-clear-btn" aria-label="Clear end time">&times;</button>
-        </span>
+        {{ datetime_field("end_local", end_local, clearable=True) }}
       </label>
     </div>
     <label>Notes

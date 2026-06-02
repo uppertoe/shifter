@@ -1,3 +1,4 @@
+{% from "_macros.html" import datetime_field %}
 <section id="dashboard-open"{% if oob %} hx-swap-oob="outerHTML"{% endif %}>
   {% if open_shifts %}
   <h2>Open shifts</h2>
@@ -31,8 +32,7 @@
                 hx-target="#{{ row_id }}"
                 hx-swap="outerHTML">
             <label>End time
-              <input type="datetime-local" name="end_time"
-                     value="{{ now_local_input }}" required>
+              {{ datetime_field("end_time", now_local_input, required=True) }}
             </label>
             <button type="submit">Close shift</button>
           </form>

@@ -120,14 +120,24 @@ def _resolve(
 # State derivation (lazy, no HA-side flags)
 # ---------------------------------------------------------------------------
 
-def _homeowner_count(conn: sqlite3.Connection, as_of: datetime) -> int:
-    """Count persons whose latest presence signal (≤ as_of) is homeowner_home."""
+def _homeowner_count(
+    conn: sqlite3.Connection, as_of: datetime, settings: Settings
+) -> int:
+    """Count persons whose latest presence signal (≤ as_of) is homeowner_home.
+
+    Only persons in settings.homeowner_person_set are counted (when that allowlist
+    is configured); this keeps stray rows — e.g. a 'test' person left behind by a
+    smoke test — from being treated as "home" forever and poisoning the count.
+    """
+    allowed = settings.homeowner_person_set
     persons = conn.execute(
         "SELECT DISTINCT person FROM ha_signals"
         " WHERE signal IN ('homeowner_home','homeowner_away') AND person IS NOT NULL"
     ).fetchall()
     count = 0
     for row in persons:
+        if allowed and row["person"] not in allowed:
+            continue
         latest = conn.execute(
             "SELECT signal FROM ha_signals"
             " WHERE person = ? AND signal IN ('homeowner_home','homeowner_away')"
@@ -153,7 +163,7 @@ def _departure_watch_active(
         return False, None
     shift = fresh[0]
 
-    if _homeowner_count(conn, as_of) < 1:
+    if _homeowner_count(conn, as_of, settings) < 1:
         return False, shift
 
     row = conn.execute(
@@ -371,8 +381,13 @@ def process_signal(
         _resolve(conn, signal_id, resolution="ignored", note=note)
         return SignalResult(signal_id, "ignored", None, None, note)
 
-    # ── Presence signals: always recorded, no action ─────────────────────────
+    # ── Presence signals: recorded, no action ────────────────────────────────
     if signal in _PRESENCE_SIGNALS:
+        allowed = settings.homeowner_person_set
+        if allowed and person not in allowed:
+            # Unknown person (e.g. a 'test' person from a smoke test). Ignore it so
+            # it never counts toward homeowner presence.
+            return _ign(f"person {person!r} not in homeowner allowlist")
         return _rec()
 
     # ── access_denied: record for failed-entry fallback window ───────────────
@@ -402,7 +417,7 @@ def process_signal(
                 )
             return _rec("open shift exists; homeowner return or duplicate")
 
-        if _homeowner_count(conn, occurred_at) < 1:
+        if _homeowner_count(conn, occurred_at, settings) < 1:
             return _ign("no homeowner home; cannot confirm nanny arrival")
 
         nanny_id, exp_id = _expected_in_window(conn, occurred_at, settings)
@@ -453,7 +468,7 @@ def process_signal(
         # Frigate outdoor cameras can't confirm someone was let inside).
         if signal == "entry_pir" and _failed_entry_recent(conn, occurred_at, settings):
             fresh = _fresh_open_shifts(conn, as_of=occurred_at, settings=settings)
-            if not fresh and _homeowner_count(conn, occurred_at) >= 1:
+            if not fresh and _homeowner_count(conn, occurred_at, settings) >= 1:
                 nanny_id, exp_id = _expected_in_window(conn, occurred_at, settings)
                 if nanny_id is not None:
                     return _do_arrival(

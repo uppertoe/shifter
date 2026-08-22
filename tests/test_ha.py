@@ -422,7 +422,7 @@ def test_ha_close_unconfirms_previously_confirmed_shift(conn):
         conn, nanny_id=a,
         start_time=datetime(2026, 5, 4, 7, 0, tzinfo=MEL).isoformat(),
         end_time=None, rate_override_cents=None, flat_rate_cents=None,
-        notes=None, source="manual", confirmed=True, created_by="eamonn",
+        notes=None, source="manual", confirmed=True, created_by="alex",
     )
     ha.process_event(
         conn,
@@ -453,7 +453,7 @@ def test_update_shift_can_clear_end_time_to_reopen(conn):
         start_time="2026-05-04T07:00:00+10:00",
         end_time=None,
         rate_override_cents=None, flat_rate_cents=None,
-        notes=None, updated_by="eamonn",
+        notes=None, updated_by="alex",
     )
     shift = conn.execute("SELECT end_time FROM shifts WHERE id = ?", (sid,)).fetchone()
     assert shift["end_time"] is None
@@ -552,7 +552,7 @@ def test_cannot_reattribute_already_resolved(conn):
     assert r.resolution == "arrival"
     with pytest.raises(ValueError, match="already arrival"):
         ha.attribute_unresolved(conn, r.event_id, nanny_id=a,
-                                  direction="arrival", user="eamonn")
+                                  direction="arrival", user="alex")
 
 
 # --- arrival attach: HA fires after shift was already opened ----------------

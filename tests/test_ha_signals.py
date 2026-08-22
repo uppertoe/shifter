@@ -47,7 +47,7 @@ def _settings(**kw):
 
 def _seed(conn):
     nanny = conn.execute("INSERT INTO nannies (name) VALUES ('Grace')").lastrowid
-    homeowner = "eamonn_upperton"
+    homeowner = "alex_homeowner"
     return nanny, homeowner
 
 
@@ -72,14 +72,14 @@ def _signal(conn, *, signal, source="rosslare", person=None,
     )
 
 
-def _presence_home(conn, person="eamonn_upperton", dt=None):
+def _presence_home(conn, person="alex_homeowner", dt=None):
     if dt is None:
         dt = datetime(2026, 5, 14, 6, 0, tzinfo=MEL)
     _signal(conn, signal="homeowner_home", source="ha_presence",
             person=person, dt=dt)
 
 
-def _presence_away(conn, person="eamonn_upperton", dt=None):
+def _presence_away(conn, person="alex_homeowner", dt=None):
     if dt is None:
         dt = datetime(2026, 5, 14, 6, 0, tzinfo=MEL)
     _signal(conn, signal="homeowner_away", source="ha_presence",
@@ -454,13 +454,13 @@ def test_departure_watch_inactive_multiple_open_shifts(conn):
 
 def test_homeowner_home_always_recorded(conn):
     r = _signal(conn, signal="homeowner_home", source="ha_presence",
-                person="eamonn_upperton")
+                person="alex_homeowner")
     assert r.resolution == "recorded"
 
 
 def test_homeowner_away_always_recorded(conn):
     r = _signal(conn, signal="homeowner_away", source="ha_presence",
-                person="eamonn_upperton")
+                person="alex_homeowner")
     assert r.resolution == "recorded"
 
 
@@ -474,27 +474,27 @@ def test_access_denied_always_recorded(conn):
 # ---------------------------------------------------------------------------
 
 def test_homeowner_count_two_people_both_home(conn):
-    _presence_home(conn, "eamonn_upperton")
-    _presence_home(conn, "puiyi_liew")
+    _presence_home(conn, "alex_homeowner")
+    _presence_home(conn, "sam_partner")
     as_of = datetime(2026, 5, 14, 10, 0, tzinfo=MEL)
     assert ha_signals._homeowner_count(conn, as_of, _settings()) == 2
 
 
 def test_homeowner_count_one_away(conn):
-    _presence_home(conn, "eamonn_upperton",
+    _presence_home(conn, "alex_homeowner",
                    dt=datetime(2026, 5, 14, 6, 0, tzinfo=MEL))
-    _presence_away(conn, "eamonn_upperton",
+    _presence_away(conn, "alex_homeowner",
                    dt=datetime(2026, 5, 14, 8, 0, tzinfo=MEL))
     as_of = datetime(2026, 5, 14, 10, 0, tzinfo=MEL)
     assert ha_signals._homeowner_count(conn, as_of, _settings()) == 0
 
 
 def test_homeowner_count_with_second_person_home(conn):
-    _presence_home(conn, "eamonn_upperton",
+    _presence_home(conn, "alex_homeowner",
                    dt=datetime(2026, 5, 14, 6, 0, tzinfo=MEL))
-    _presence_away(conn, "eamonn_upperton",
+    _presence_away(conn, "alex_homeowner",
                    dt=datetime(2026, 5, 14, 8, 0, tzinfo=MEL))
-    _presence_home(conn, "puiyi_liew",
+    _presence_home(conn, "sam_partner",
                    dt=datetime(2026, 5, 14, 9, 0, tzinfo=MEL))
     as_of = datetime(2026, 5, 14, 10, 0, tzinfo=MEL)
     assert ha_signals._homeowner_count(conn, as_of, _settings()) == 1
@@ -503,7 +503,7 @@ def test_homeowner_count_with_second_person_home(conn):
 def test_homeowner_allowlist_ignores_unknown_person(conn):
     """A stray 'test' person (e.g. from a smoke test) is ignored at ingestion and
     never counts toward homeowner presence when an allowlist is configured."""
-    allowed = _settings(homeowner_persons="eamonn_upperton,puiyi_liew")
+    allowed = _settings(homeowner_persons="alex_homeowner,sam_partner")
     res = _signal(conn, signal="homeowner_home", source="smoke",
                   person="test", settings=allowed)
     assert res.resolution == "ignored"
@@ -517,7 +517,7 @@ def test_homeowner_allowlist_ignores_unknown_person(conn):
     assert ha_signals._homeowner_count(conn, as_of, allowed) == 0
 
     # A real, allowlisted homeowner still counts.
-    _presence_home(conn, "eamonn_upperton")
+    _presence_home(conn, "alex_homeowner")
     assert ha_signals._homeowner_count(conn, as_of, allowed) == 1
 
 
@@ -526,13 +526,13 @@ def test_departure_watch_activates_when_second_homeowner_home(conn):
     nanny, _ = _seed(conn)
     _open_shift(conn, nanny)
 
-    # Eamonn left before shift
-    _presence_home(conn, "eamonn_upperton",
+    # Alex left before shift
+    _presence_home(conn, "alex_homeowner",
                    dt=datetime(2026, 5, 14, 6, 0, tzinfo=MEL))
-    _presence_away(conn, "eamonn_upperton",
+    _presence_away(conn, "alex_homeowner",
                    dt=datetime(2026, 5, 14, 6, 30, tzinfo=MEL))
-    # Puiyi arrives after shift start
-    _presence_home(conn, "puiyi_liew",
+    # Sam arrives after shift start
+    _presence_home(conn, "sam_partner",
                    dt=datetime(2026, 5, 14, 17, 0, tzinfo=MEL))
 
     r = _signal(conn, signal="entry_pir", source="entry_pir",

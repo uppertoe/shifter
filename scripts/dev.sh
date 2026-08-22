@@ -6,7 +6,7 @@ mkdir -p data
 exec env \
     PYTHONPATH=src \
     DEV_MODE=true \
-    DEV_USER=eamonn \
+    DEV_USER=alex \
     API_KEY= \
     DATABASE_PATH="$(pwd)/data/shifter-dev.db" \
     SCREENSHOT_DIR="$(pwd)/data/screenshots-dev" \

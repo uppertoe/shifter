@@ -139,7 +139,7 @@ def test_plan_skips_unmapped_and_empty(conn, fixture_path):
     assert plan.expense_candidates_total >= 6  # at least the obvious lunches/aquarium
     assert plan.not_worked_count == 2
     # Most common unmapped tag should be 'oncall' or similar
-    assert plan.skipped_unique_tags.most_common(1)[0][0] in {"eamonn", "oncall", "monash"}
+    assert plan.skipped_unique_tags.most_common(1)[0][0] in {"alex", "oncall", "worksite"}
 
 
 # --- import -----------------------------------------------------------------

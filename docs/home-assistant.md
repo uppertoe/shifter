@@ -12,7 +12,8 @@ mmWave trigger can be wired straight in.
 - [GET /api/shift/current](#get-apishiftcurrent)
 - [Resolution policy](#resolution-policy)
 - [Debounce](#debounce)
-- [Manual attribution UI](#manual-attribution-ui)
+- [Reviewing HA-set shifts](#reviewing-ha-set-shifts)
+- [Manual attribution UI (legacy)](#manual-attribution-ui-legacy)
 - [Worked HA configuration](#worked-ha-configuration)
 - [Quick test from the CLI](#quick-test-from-the-cli)
 
@@ -251,6 +252,26 @@ Anything that doesn't match a shift in state A or B. In particular:
 These are recorded with `resolution=ignored` and a note explaining why,
 so you can audit them with SQL — but no shift state changes.
 
+### Who sets the start time
+
+The preferred source of a shift's start time is the nanny's own arrival
+signal (a keypad `access_granted` within ±`PRE_SHIFT_WINDOW_MINUTES` of the
+scheduled start, see `ha_signals.py`). The shift opens at the arrival time
+rounded **up** to the next 15 min (07:58 → 08:00, same rule as departures),
+but never before the scheduled start — an early arrival is paid from the
+rostered time.
+
+The auto-opener is only a **fallback** for the days nobody used the keypad
+(let in by a homeowner, door already open, ...). It waits until the arrival
+window has closed — scheduled start + `PRE_SHIFT_WINDOW_MINUTES` (default
+90 min), capped at half the slot length — and only then opens the shift at
+the scheduled start. Until then the slot stays in the dashboard's "Expected
+today" section as *not arrived yet*, where a human can also open it by hand.
+
+Before this change the auto-opener fired **at** the scheduled start, so every
+late arrival was pinned to the roster time and had to be edited by hand
+(about half of all shifts in the first three months of prod).
+
 ### All HA-set times need human confirmation
 
 The auto-fill from HA events is a *convenience*, not a source of truth.
@@ -286,7 +307,17 @@ ignored, not unresolved.
   anchors; chains of ignored events don't accumulate a longer suppression
   window.
 
-## Manual attribution UI
+## Reviewing HA-set shifts
+
+The dashboard's **Pending review** section shows this week's unconfirmed
+shifts with their arrival/departure snapshots (click a thumbnail to enlarge,
+click again to zoom to native resolution). Anything older lives on the
+**Review** page (`/review`, also in the nav), which lists *every* unconfirmed
+shift regardless of age with the same cards, snapshots and Confirm / Edit
+actions. The shifts table and the shift edit page also carry Confirm buttons,
+so nothing can sit unreviewed just because it aged off the front page.
+
+## Manual attribution UI (legacy)
 
 Unresolved events live at `/api/events/unresolved` (session auth). The page
 lists each event with its source, time, and any attached screenshot, plus a

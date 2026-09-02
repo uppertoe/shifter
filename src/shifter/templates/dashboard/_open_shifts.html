@@ -1,4 +1,4 @@
-{% from "_macros.html" import datetime_field %}
+{% from "_macros.html" import datetime_field, shot_thumbs %}
 <section id="dashboard-open"{% if oob %} hx-swap-oob="outerHTML"{% endif %}>
   {% if open_shifts %}
   <h2>Open shifts</h2>
@@ -15,13 +15,7 @@
         {% endif %}
       </div>
       <div class="pending-shots">
-        {% if v.shots.arrival %}
-          <a href="/screenshots/{{ v.shots.arrival.filename }}" target="_blank" title="Arrival snapshot">
-            <img src="/screenshots/{{ v.shots.arrival.filename }}" alt="arrival" class="pending-thumb">
-          </a>
-        {% else %}
-          <small class="muted">no snapshot</small>
-        {% endif %}
+        {{ shot_thumbs(v.shots) }}
       </div>
       <div class="pending-actions">
         <details class="confirm">

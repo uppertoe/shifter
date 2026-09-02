@@ -224,8 +224,134 @@ def test_dashboard_groups_older_pending_into_count(client, conn, tmp_path):
                             has_arrival=False, has_departure=False)
     r = client.get("/", headers={"Remote-User": "alice"})
     assert r.status_code == 200
-    assert "1 older awaiting review" in r.text
-    assert "/shifts?confirmed=no" in r.text
+    assert "1 older shift awaiting review" in r.text
+    assert 'href="/review"' in r.text
+
+
+def test_review_page_lists_old_pending_with_snapshots_and_confirm(client, conn, tmp_path):
+    """Shifts that aged off the dashboard must still be confirmable — with
+    their snapshots — from /review."""
+    old_day = date.today() - timedelta(days=40)
+    sid = _make_shift_with_shots(conn, tmp_path / "shots", day=old_day)
+    r = client.get("/review", headers={"Remote-User": "alice"})
+    assert r.status_code == 200
+    assert f"/shifts/{sid}/confirm" in r.text
+    assert f"/screenshots/{old_day.year:04d}/{old_day.month:02d}/arr-{sid}.jpg" in r.text
+    assert f"/screenshots/{old_day.year:04d}/{old_day.month:02d}/dep-{sid}.jpg" in r.text
+    assert "data-lightbox" in r.text
+    # Confirmed shifts don't show up.
+    conn.execute("UPDATE shifts SET confirmed = 1 WHERE id = ?", (sid,))
+    r = client.get("/review", headers={"Remote-User": "alice"})
+    assert f"/shifts/{sid}/confirm" not in r.text
+    assert "Nothing to review" in r.text
+
+
+def test_confirm_from_review_page_skips_dashboard_oob(client, conn):
+    nid = conn.execute("INSERT INTO nannies (name) VALUES ('A')").lastrowid
+    sid = conn.execute(
+        "INSERT INTO shifts (nanny_id, start_time, source, confirmed,"
+        " created_by, updated_by) VALUES (?, '2026-05-04T07:00:00+10:00',"
+        " 'ha', 0, 'x', 'x')", (nid,),
+    ).lastrowid
+    r = client.post(f"/shifts/{sid}/confirm",
+                     headers={"HX-Request": "true", "Remote-User": "alice",
+                              "HX-Current-URL": "http://testserver/review"})
+    assert r.status_code == 200
+    assert r.text == ""   # card vanishes, no dashboard fragments
+    assert conn.execute("SELECT confirmed FROM shifts WHERE id = ?", (sid,)).fetchone()["confirmed"] == 1
+
+
+def test_cancel_edit_from_review_page_restores_card(client, conn):
+    nid = conn.execute("INSERT INTO nannies (name) VALUES ('A')").lastrowid
+    sid = conn.execute(
+        "INSERT INTO shifts (nanny_id, start_time, end_time, source, confirmed,"
+        " created_by, updated_by) VALUES (?, '2026-05-04T07:00:00+10:00',"
+        " '2026-05-04T17:00:00+10:00', 'ha', 0, 'x', 'x')", (nid,),
+    ).lastrowid
+    r = client.get(f"/shifts/{sid}/cancel-edit?row_id=review-shift-{sid}",
+                    headers={"HX-Request": "true", "Remote-User": "alice",
+                             "HX-Current-URL": "http://testserver/review"})
+    assert r.status_code == 200
+    assert f'id="review-shift-{sid}"' in r.text
+    assert f"/shifts/{sid}/confirm" in r.text
+    assert "dashboard-stats" not in r.text
+
+
+def test_confirm_with_next_redirects_back(client, conn):
+    nid = conn.execute("INSERT INTO nannies (name) VALUES ('A')").lastrowid
+    sid = conn.execute(
+        "INSERT INTO shifts (nanny_id, start_time, source, confirmed,"
+        " created_by, updated_by) VALUES (?, '2026-05-04T07:00:00+10:00',"
+        " 'ha', 0, 'x', 'x')", (nid,),
+    ).lastrowid
+    r = client.post(f"/shifts/{sid}/confirm",
+                     data={"next": "/shifts?confirmed=no&nanny_id=1"},
+                     headers={"Remote-User": "alice"}, follow_redirects=False)
+    assert r.status_code == 303
+    assert r.headers["location"] == "/shifts?confirmed=no&nanny_id=1"
+    # Off-site "next" is refused.
+    r = client.post(f"/shifts/{sid}/confirm", data={"next": "//evil.example/"},
+                     headers={"Remote-User": "alice"}, follow_redirects=False)
+    assert r.headers["location"] == "/shifts"
+
+
+def test_shifts_list_pending_row_has_confirm(client, conn):
+    nid = conn.execute("INSERT INTO nannies (name) VALUES ('A')").lastrowid
+    sid = conn.execute(
+        "INSERT INTO shifts (nanny_id, start_time, source, confirmed,"
+        " created_by, updated_by) VALUES (?, '2026-05-01T07:00:00+10:00',"
+        " 'ha', 0, 'x', 'x')", (nid,),
+    ).lastrowid
+    r = client.get("/shifts?confirmed=no", headers={"Remote-User": "alice"})
+    assert f'action="/shifts/{sid}/confirm"' in r.text
+    assert 'value="/shifts?confirmed=no"' in r.text
+
+
+def test_create_shift_with_inline_expenses(client, conn):
+    nid = conn.execute("INSERT INTO nannies (name) VALUES ('A')").lastrowid
+    r = client.post(
+        "/shifts",
+        data={"nanny_id": str(nid), "start_local": "2026-05-04T07:00",
+              "end_local": "2026-05-04T17:00",
+              "expense_description": ["lunch", "", "zoo"],
+              "expense_amount": ["12.90", "", "$53"]},
+        headers={"Remote-User": "alice"}, follow_redirects=False,
+    )
+    assert r.status_code == 303
+    rows = conn.execute(
+        "SELECT description, amount_cents FROM expenses ORDER BY id"
+    ).fetchall()
+    assert [(x["description"], x["amount_cents"]) for x in rows] == [("lunch", 1290), ("zoo", 5300)]
+
+
+def test_create_shift_rejects_half_filled_expense_row(client, conn):
+    nid = conn.execute("INSERT INTO nannies (name) VALUES ('A')").lastrowid
+    r = client.post(
+        "/shifts",
+        data={"nanny_id": str(nid), "start_local": "2026-05-04T07:00",
+              "expense_description": "lunch", "expense_amount": ""},
+        headers={"Remote-User": "alice"}, follow_redirects=False,
+    )
+    assert r.status_code == 400
+    assert conn.execute("SELECT COUNT(*) c FROM shifts").fetchone()["c"] == 0
+
+
+def test_edit_page_save_and_confirm(client, conn, tmp_path):
+    sid = _make_shift_with_shots(conn, tmp_path / "shots", day=date(2026, 5, 4))
+    r = client.get(f"/shifts/{sid}/edit", headers={"Remote-User": "alice"})
+    assert "Save &amp; confirm" in r.text
+    assert "/screenshots/2026/05/arr-" in r.text   # snapshots on the edit page too
+    nid = conn.execute("SELECT nanny_id FROM shifts WHERE id = ?", (sid,)).fetchone()["nanny_id"]
+    r = client.post(
+        f"/shifts/{sid}",
+        data={"nanny_id": str(nid), "start_local": "2026-05-04T07:45",
+              "end_local": "2026-05-04T17:00", "confirm": "1"},
+        headers={"Remote-User": "alice"}, follow_redirects=False,
+    )
+    assert r.status_code == 303
+    row = conn.execute("SELECT confirmed, start_time FROM shifts WHERE id = ?", (sid,)).fetchone()
+    assert row["confirmed"] == 1
+    assert row["start_time"].startswith("2026-05-04T07:45")
 
 
 def test_shifts_list_filter_confirmed_no(client, conn):

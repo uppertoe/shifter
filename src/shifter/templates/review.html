@@ -1,0 +1,42 @@
+{% extends "base.html" %}
+{% block title %}Review — shifter{% endblock %}
+
+{% block content %}
+<header class="page-head">
+  <h1>Review</h1>
+  {% if pending_shifts|length > 1 %}
+  <form hx-post="/shifts/confirm-batch"
+        hx-target="#review-list"
+        hx-swap="outerHTML">
+    {% for v in pending_shifts %}
+      <input type="hidden" name="shift_ids" value="{{ v.shift.id }}">
+    {% endfor %}
+    <button type="submit" class="secondary">Confirm all {{ pending_shifts|length }}</button>
+  </form>
+  {% endif %}
+</header>
+
+<p class="muted-lead"><small class="muted">
+  Every shift that still needs a human sign-off, newest first — including ones
+  that have aged off the dashboard. Check the times against the snapshots
+  (click to enlarge), then Confirm, or Edit to fix the times first.
+</small></p>
+
+{% if open_unconfirmed_count %}
+  <p><small class="muted">{{ open_unconfirmed_count }} open shift{{ '' if open_unconfirmed_count == 1 else 's' }}
+    still running — close {{ 'it' if open_unconfirmed_count == 1 else 'them' }} from the
+    <a href="/">dashboard</a> first, then {{ 'it' if open_unconfirmed_count == 1 else 'they' }}'ll show up here.</small></p>
+{% endif %}
+
+<section id="review-list">
+  {% for v in pending_shifts %}
+    {% set row_id = "review-shift-" ~ v.shift.id %}
+    {% include "dashboard/_pending_card.html" %}
+  {% else %}
+    <article class="empty-state">
+      <h3>Nothing to review</h3>
+      <p>All shifts are confirmed. <a href="/">Back to the dashboard</a>.</p>
+    </article>
+  {% endfor %}
+</section>
+{% endblock %}

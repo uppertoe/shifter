@@ -1,7 +1,7 @@
 <section id="dashboard-pending"{% if oob %} hx-swap-oob="outerHTML"{% endif %}>
   {% if pending_shifts or pending_older_count %}
   <header class="pending-header">
-    <h2>Pending review <small class="muted">(from Home Assistant)</small></h2>
+    <h2>Pending review</h2>
     {% if pending_shifts|length > 1 %}
     <form hx-post="/shifts/confirm-batch"
           hx-target="#dashboard-pending"
@@ -14,49 +14,12 @@
     {% endif %}
   </header>
   {% for v in pending_shifts %}
-    {% set day_iso = v.computed.start.date().isoformat() %}
     {% set row_id = "pending-shift-" ~ v.shift.id %}
-    <article id="{{ row_id }}" class="pending-shift" style="--chip-bg: {{ nanny_color(v.nanny.id) }};">
-      <div class="pending-meta">
-        <strong class="nanny-chip">{{ v.nanny.name }}</strong>
-        <small class="muted">{{ format_dt(v.shift.start_time, tz) }} – {{ format_dt(v.shift.end_time, tz) if v.shift.end_time else 'open' }}</small>
-        <small class="muted"><strong>{{ format_duration(v.shift.start_time, v.shift.end_time) }}</strong> · {{ format_cents(v.computed.pay_cents) }}</small>
-      </div>
-      <div class="pending-shots">
-        {% if v.shots.arrival %}
-          <a href="/screenshots/{{ v.shots.arrival.filename }}" target="_blank" title="Arrival snapshot">
-            <img src="/screenshots/{{ v.shots.arrival.filename }}" alt="arrival" class="pending-thumb">
-          </a>
-        {% endif %}
-        {% if v.shots.departure %}
-          <a href="/screenshots/{{ v.shots.departure.filename }}" target="_blank" title="Departure snapshot">
-            <img src="/screenshots/{{ v.shots.departure.filename }}" alt="departure" class="pending-thumb">
-          </a>
-        {% endif %}
-        {% if not v.shots.arrival and not v.shots.departure %}
-          <small class="muted">no snapshot</small>
-        {% endif %}
-      </div>
-      <div class="pending-actions">
-        <button type="button"
-                hx-post="/shifts/{{ v.shift.id }}/confirm"
-                hx-target="#{{ row_id }}"
-                hx-swap="outerHTML">Confirm</button>
-        <button type="button" class="secondary outline"
-                hx-get="/shifts/{{ v.shift.id }}/inline-editor?row_id={{ row_id }}&confirm_on_save=1"
-                hx-target="#{{ row_id }}"
-                hx-swap="outerHTML">Edit</button>
-        {% if frigate_base_url %}
-          <a href="{{ frigate_base_url }}/review?date={{ day_iso }}"
-             target="_blank" rel="noopener"
-             role="button" class="secondary outline">Frigate</a>
-        {% endif %}
-      </div>
-    </article>
+    {% include "dashboard/_pending_card.html" %}
   {% endfor %}
   {% if pending_older_count %}
-    <p><small class="muted">+ {{ pending_older_count }} older awaiting review —
-      <a href="/shifts?confirmed=no">review all</a></small></p>
+    <p><small class="muted">+ {{ pending_older_count }} older shift{{ '' if pending_older_count == 1 else 's' }} awaiting review —
+      <a href="/review">review all</a></small></p>
   {% endif %}
   {% endif %}
 </section>

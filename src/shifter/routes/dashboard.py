@@ -69,13 +69,17 @@ def _build_context(conn, settings: Settings, user: str) -> dict:
         if slot.nanny_id not in visible_nanny_ids:
             continue
         start_dt, end_dt = schedule.slot_window(slot, tz)
+        auto_open_at = schedule.auto_open_due_at(slot, tz, settings)
         expected_today.append({
             "slot": slot,
             "nanny": repos.get_nanny(conn, slot.nanny_id),
             "start_dt": start_dt,
             "end_dt": end_dt,
             "is_due": start_dt <= now,
+            "is_over": end_dt <= now,
+            "auto_open_at": auto_open_at,
             "minutes_to_start": int((start_dt - now).total_seconds() // 60),
+            "minutes_to_auto_open": int((auto_open_at - now).total_seconds() // 60),
         })
 
     open_shifts = [s for s in repos.list_shifts(conn, open_only=True)
@@ -87,9 +91,11 @@ def _build_context(conn, settings: Settings, user: str) -> dict:
         open_views.append(v)
 
     # Pending review: only this-week-or-newer on the dashboard for at-a-glance
-    # focus. Older unconfirmed shifts get a footer link.
+    # focus. Older unconfirmed shifts get a footer link to /review. Open
+    # shifts are excluded — they can't be signed off until they have an end
+    # time, and they already have their own section above.
     all_pending = [s for s in repos.list_shifts(conn, confirmed=False)
-                   if _is_visible(s)]
+                   if _is_visible(s) and s["end_time"]]
     pending_recent = [s for s in all_pending
                       if datetime.fromisoformat(s["start_time"]).date() >= week_start]
     pending_older_count = len(all_pending) - len(pending_recent)
@@ -148,6 +154,48 @@ def render_oob_refresh(conn, settings: Settings, user: str) -> str:
     ctx = _build_context(conn, settings, user)
     ctx["oob"] = True
     return templates.env.get_template("dashboard/_oob_refresh.html").render(ctx)
+
+
+def render_pending_card(conn, settings: Settings, shift_id: int, row_id: str) -> str:
+    """Re-render one unconfirmed shift as a review card (used when an inline
+    editor is cancelled somewhere other than the dashboard, where there is no
+    OOB refresh to restore the card)."""
+    shift = repos.get_shift(conn, shift_id)
+    if shift is None:
+        return ""
+    now = datetime.now(settings.zoneinfo)
+    return templates.env.get_template("dashboard/_pending_card.html").render({
+        "v": _shift_brief(conn, shift, now=now, with_shots=True),
+        "row_id": row_id,
+        "tz": settings.zoneinfo,
+        "frigate_base_url": settings.frigate_base_url,
+    })
+
+
+@router.get("/review", response_class=HTMLResponse)
+def review(
+    request: Request,
+    conn=Depends(get_db),
+    settings: Settings = Depends(get_settings),
+    user: str = Depends(current_user),
+):
+    """Every unconfirmed shift, regardless of age or dashboard visibility.
+    The dashboard only shows this week's; older ones used to be reachable only
+    through the shifts table, which had no Confirm button and no snapshots."""
+    now = datetime.now(settings.zoneinfo)
+    unconfirmed = repos.list_shifts(conn, confirmed=False)
+    closed = [s for s in unconfirmed if s["end_time"]]
+    open_count = len(unconfirmed) - len(closed)
+    views = [_shift_brief(conn, s, now=now, with_shots=True) for s in closed]
+    return templates.TemplateResponse(
+        request, "review.html", {
+            "user": user,
+            "tz": settings.zoneinfo,
+            "pending_shifts": views,
+            "open_unconfirmed_count": open_count,
+            "frigate_base_url": settings.frigate_base_url,
+        },
+    )
 
 
 @router.get("/", response_class=HTMLResponse)

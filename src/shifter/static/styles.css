@@ -101,6 +101,7 @@
   flex-wrap: nowrap;
 }
 .row-actions > * { margin: 0; }
+.row-actions form { display: inline; margin: 0; }
 .row-actions a[role="button"],
 .row-actions button,
 .row-actions details.confirm > summary {
@@ -641,3 +642,85 @@ button.chip-add .chip-hover   { display: none; }
 button.chip-add:hover .chip-default { display: none; }
 button.chip-add:hover .chip-hover   { display: inline; }
 button.chip-add small { opacity: 0.9; margin-left: 0.25rem; }
+
+/* Snapshot lightbox. The overlay itself scrolls when zoomed to native size;
+   the caption is fixed to the bottom of the viewport. */
+.pending-thumb { cursor: zoom-in; }
+.lightbox {
+  position: fixed; inset: 0; z-index: 1000;
+  background: rgba(0, 0, 0, 0.88);
+  display: flex; align-items: center; justify-content: center;
+  overflow: auto;
+  cursor: zoom-out;
+}
+.lightbox img {
+  max-width: 96vw; max-height: 92vh;
+  width: auto; height: auto;
+  object-fit: contain;
+  border-radius: 4px;
+  box-shadow: 0 8px 32px rgba(0, 0, 0, 0.6);
+  cursor: zoom-in;
+}
+.lightbox.zoomed { display: block; }
+.lightbox.zoomed img {
+  max-width: none; max-height: none;
+  display: block;
+  margin: 0 auto;
+  border-radius: 0;
+  cursor: zoom-out;
+}
+.lightbox-close {
+  position: fixed; top: 0.75rem; right: 0.75rem;
+  width: 2.5rem; height: 2.5rem; padding: 0; margin: 0;
+  border-radius: 50%;
+  background: rgba(255, 255, 255, 0.15); color: #fff; border: none;
+  font-size: 1.5rem; line-height: 1;
+  cursor: pointer;
+}
+.lightbox-close:hover { background: rgba(255, 255, 255, 0.3); }
+.lightbox-caption {
+  position: fixed; left: 0; right: 0; bottom: 0.75rem;
+  text-align: center; color: rgba(255, 255, 255, 0.85);
+  font-size: 0.875rem; pointer-events: none;
+}
+body.lightbox-open { overflow: hidden; }
+
+/* Edit-page snapshot strip: same thumbnails as the dashboard cards, larger. */
+.shot-strip { display: flex; gap: 0.75rem; flex-wrap: wrap; align-items: center; margin: 0 0 1rem; }
+.shot-strip .pending-thumb { height: 7rem; max-width: 12rem; }
+.shot-strip figure { margin: 0; }
+.shot-strip figcaption { font-size: 0.75rem; color: var(--pico-muted-color); margin-top: 0.2rem; }
+
+/* Expense entry: description + amount + Add. Stack on narrow screens so the
+   amount field and button don't get squeezed to nothing beside a long
+   description input. */
+.expense-add { margin-bottom: 0.75rem; }
+.expense-add fieldset[role="group"] { margin-bottom: 0; }
+.expense-add fieldset[role="group"] > input.expense-amount,
+.expense-row input.expense-amount { flex: 0 1 9rem; min-width: 6rem; }
+.expense-rows { display: flex; flex-direction: column; gap: 0.5rem; margin-bottom: 0.5rem; }
+.expense-row { display: flex; gap: 0.5rem; }
+.expense-row input { margin-bottom: 0; }
+.expense-row .expense-desc { flex: 1 1 auto; min-width: 0; }
+@media (max-width: 600px) {
+  .expense-add fieldset[role="group"] {
+    display: grid;
+    grid-template-columns: 1fr auto;
+    gap: 0.4rem;
+  }
+  .expense-add fieldset[role="group"] > input:first-child { grid-column: 1 / -1; }
+  .expense-add fieldset[role="group"] > * {
+    border-radius: var(--pico-border-radius) !important;
+    margin: 0;
+  }
+}
+
+/* Edit page: keep the primary actions together, Delete last as a quiet
+   danger zone. */
+.edit-section { margin-top: 1.5rem; padding-top: 1rem; border-top: 1px solid var(--pico-muted-border-color); }
+.edit-section h3 { margin-bottom: 0.75rem; }
+.edit-section > p:last-child { margin-bottom: 0; }
+.danger-zone { margin-top: 2rem; padding-top: 1rem; border-top: 1px dashed var(--pico-muted-border-color); }
+.form-actions button, .form-actions a[role="button"] { margin: 0; width: auto; }
+.status-line { display: flex; gap: 0.5rem; align-items: center; flex-wrap: wrap; margin: 0 0 1rem; }
+.muted-lead { margin: -0.5rem 0 1rem; }

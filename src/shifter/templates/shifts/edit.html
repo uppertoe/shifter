@@ -1,5 +1,5 @@
 {% extends "base.html" %}
-{% from "_macros.html" import datetime_field %}
+{% from "_macros.html" import datetime_field, shot_thumbs %}
 {% block title %}{{ 'Edit shift' if shift else 'New shift' }} — shifter{% endblock %}
 
 {% block content %}
@@ -10,12 +10,31 @@
 
 {% if error %}<article class="error"><strong>Couldn't save:</strong> {{ error }}</article>{% endif %}
 
-{# The main edit form has no Save button inside it — Save lives below the
-   Expenses section and references the form by id. This lets the user
-   review existing expenses (and add new ones) before committing the
-   shift edit. Expenses' own forms (HTMX) sit *outside* the main form to
-   avoid nesting; the form="shift-edit-form" attribute on the Save
-   button bridges back to it. #}
+{% if shift %}
+  <div class="status-line">
+    {% if not shift.confirmed %}<small class="pill pending">awaiting review</small>
+    {% else %}<small class="pill paid">confirmed</small>{% endif %}
+    {% if shift.paid_on %}<small class="pill paid">paid {{ shift.paid_on }}</small>
+    {% else %}<small class="pill unpaid">unpaid</small>{% endif %}
+    {% if not shift.end_time %}<small class="pill open">open</small>{% endif %}
+    <small class="muted">source: {{ shift.source }}</small>
+  </div>
+  {% if shots and (shots.arrival or shots.departure) %}
+    <div class="shot-strip">
+      {% if shots.arrival %}
+        <figure>{{ shot_thumbs({'arrival': shots.arrival, 'departure': None}, empty_text='') }}<figcaption>Arrival</figcaption></figure>
+      {% endif %}
+      {% if shots.departure %}
+        <figure>{{ shot_thumbs({'arrival': None, 'departure': shots.departure}, empty_text='') }}<figcaption>Departure</figcaption></figure>
+      {% endif %}
+      {% if frigate_base_url %}
+        <a href="{{ frigate_base_url }}/review?date={{ shift.start_time[:10] }}" target="_blank" rel="noopener"
+           role="button" class="secondary outline">Frigate</a>
+      {% endif %}
+    </div>
+  {% endif %}
+{% endif %}
+
 <form id="shift-edit-form" method="post" action="{% if shift %}/shifts/{{ shift.id }}{% else %}/shifts{% endif %}">
   <div class="grid">
     <label>Nanny
@@ -50,36 +69,60 @@
   <label>Notes
     <textarea name="notes" rows="2" placeholder="optional">{{ shift.notes if shift else '' }}</textarea>
   </label>
+
+  {% if not shift %}
+    {# New shift: expense lines go in with the shift, so a lunch receipt doesn't
+       need a second trip through the shifts list and the edit page. #}
+    <h3>Expenses <small class="muted">(optional)</small></h3>
+    <div class="expense-rows" id="new-expense-rows">
+      <div class="expense-row">
+        <input name="expense_description" class="expense-desc" placeholder="Description (e.g. lunch)">
+        <input name="expense_amount" class="expense-amount" inputmode="decimal" placeholder="$0.00">
+      </div>
+      <template>
+        <div class="expense-row">
+          <input name="expense_description" class="expense-desc" placeholder="Description (e.g. lunch)">
+          <input name="expense_amount" class="expense-amount" inputmode="decimal" placeholder="$0.00">
+        </div>
+      </template>
+    </div>
+    <button type="button" class="secondary outline" data-add-expense-row="new-expense-rows">+ Another expense</button>
+  {% endif %}
+
+  <div class="form-actions">
+    {% if shift and not shift.confirmed %}
+      <button type="submit" name="confirm" value="1">Save &amp; confirm</button>
+      <button type="submit" name="confirm" value="0" class="secondary">Save only</button>
+    {% else %}
+      <button type="submit">Save</button>
+    {% endif %}
+  </div>
 </form>
 
 {% if shift %}
-  <hr>
-  <h3>Expenses</h3>
-  <div id="expenses-block-{{ shift.id }}">
-    {% include "shifts/_expenses.html" %}
-  </div>
+  <section class="edit-section">
+    <h3>Expenses</h3>
+    <div id="expenses-block-{{ shift.id }}">
+      {% include "shifts/_expenses.html" %}
+    </div>
+    {# Saved immediately via HTMX — separate from the shift form above. #}
+    <form class="expense-add"
+          hx-post="/shifts/{{ shift.id }}/expenses"
+          hx-target="#expenses-block-{{ shift.id }}"
+          hx-swap="innerHTML"
+          hx-on::after-request="if(event.detail.successful) this.reset()">
+      <fieldset role="group">
+        <input name="description" placeholder="Description (e.g. lunch)" required>
+        <input name="amount" class="expense-amount" inputmode="decimal" placeholder="$0.00" required>
+        <button type="submit">Add</button>
+      </fieldset>
+    </form>
+    <p><small class="muted">Expenses save as soon as you click Add — they don't wait for the shift's Save button.</small></p>
+  </section>
 
-  <form hx-post="/shifts/{{ shift.id }}/expenses"
-        hx-target="#expenses-block-{{ shift.id }}"
-        hx-swap="innerHTML"
-        hx-on::after-request="if(event.detail.successful) this.reset()">
-    <fieldset role="group">
-      <input name="description" placeholder="Description (e.g. lunch)" required>
-      <input name="amount" inputmode="decimal" placeholder="$0.00" required>
-      <button type="submit">Add expense</button>
-    </fieldset>
-  </form>
-  <hr>
-{% endif %}
-
-<div class="form-actions">
-  <button type="submit" form="shift-edit-form">Save</button>
-</div>
-
-{% if shift %}
   {# Delete lives in its own form because nested <form> is invalid HTML and
      browsers silently fall back to the outer form's action. #}
-  <div class="form-actions">
+  <div class="form-actions danger-zone">
     <details class="confirm">
       <summary class="confirm-trigger secondary outline">Delete shift</summary>
       <form method="post" action="/shifts/{{ shift.id }}/delete">

@@ -1,11 +1,12 @@
 from __future__ import annotations
 
 from datetime import date, datetime
+from urllib.parse import urlsplit
 
 from fastapi import APIRouter, Depends, Form, HTTPException, Request, status
 from fastapi.responses import HTMLResponse, RedirectResponse
 
-from shifter import pay, repos
+from shifter import pay, repos, screenshots
 from shifter.auth import current_user
 from shifter.config import Settings, get_settings
 from shifter.main import get_db, templates
@@ -13,11 +14,21 @@ from shifter.money import parse_dollars
 from shifter.time_utils import parse_local_input, to_local_input
 
 
+def _on_dashboard(request: Request) -> bool:
+    """True when the HTMX request originated from the dashboard page. The same
+    card endpoints are used from /review, where the dashboard's OOB fragments
+    have no targets (and would only produce htmx console warnings)."""
+    current = request.headers.get("HX-Current-URL", "")
+    return urlsplit(current).path in ("", "/")
+
+
 def _htmx_swap_with_oob(request: Request, conn, settings: Settings, user: str,
                           card_html: str = "") -> HTMLResponse:
     """Standard HTMX response for a dashboard-mutating action: empty (or
-    given) main-target HTML, plus OOB-swap fragments for the dashboard's
-    summary sections so totals/counts re-render in place."""
+    given) main-target HTML, plus — on the dashboard — OOB-swap fragments for
+    its summary sections so totals/counts re-render in place."""
+    if not _on_dashboard(request):
+        return HTMLResponse(card_html)
     # Late import: dashboard imports from main.get_db; avoids any cycle.
     from shifter.routes.dashboard import render_oob_refresh
     oob = render_oob_refresh(conn, settings, user)
@@ -98,6 +109,7 @@ def list_page(
             "filter_open": bool(open_only),
             "tz": settings.zoneinfo,
             "today_iso": date.today().isoformat(),
+            "current_url": request.url.path + ("?" + request.url.query if request.url.query else ""),
         },
     )
 
@@ -122,11 +134,27 @@ def _form_context(conn, settings: Settings, *, shift=None, error: str | None = N
         "nannies": nannies,
         "expenses": expenses,
         "expenses_total_cents": expenses_total_cents,
+        "shots": screenshots.shots_for_shift(conn, shift["id"]) if shift else None,
         "start_local": start_local,
         "end_local": end_local,
         "error": error,
         "tz": settings.zoneinfo,
+        "frigate_base_url": settings.frigate_base_url,
     }
+
+
+def _expense_lines(descriptions: list[str], amounts: list[str]) -> list[tuple[str, int]]:
+    """Pair up the repeated expense_description / expense_amount inputs from
+    the new-shift form. Blank rows are skipped; a half-filled row is an error."""
+    out: list[tuple[str, int]] = []
+    for desc, amt in zip(descriptions, amounts):
+        desc, amt = desc.strip(), amt.strip()
+        if not desc and not amt:
+            continue
+        if not desc or not amt:
+            raise ValueError("each expense needs both a description and an amount")
+        out.append((desc, parse_dollars(amt)))
+    return out
 
 
 @router.get("/new", response_class=HTMLResponse)
@@ -149,6 +177,8 @@ def create(
     rate_override: str = Form(""),
     flat_rate: str = Form(""),
     notes: str = Form(""),
+    expense_description: list[str] = Form([]),
+    expense_amount: list[str] = Form([]),
     conn=Depends(get_db),
     settings: Settings = Depends(get_settings),
     user: str = Depends(current_user),
@@ -161,6 +191,7 @@ def create(
             raise ValueError("end time must be after start time")
         rate_override_cents = _parse_optional_dollars(rate_override)
         flat_rate_cents = _parse_optional_dollars(flat_rate)
+        expense_lines = _expense_lines(expense_description, expense_amount)
     except ValueError as e:
         ctx = _form_context(conn, settings, error=str(e))
         return templates.TemplateResponse(
@@ -170,7 +201,7 @@ def create(
     # All shifts start unconfirmed: the explicit confirm step is the human
     # signoff that the times (whether typed in or auto-filled by HA) are
     # right. Manual creation is no exception.
-    repos.create_shift(
+    shift_id = repos.create_shift(
         conn,
         nanny_id=nanny_id,
         start_time=start,
@@ -182,6 +213,10 @@ def create(
         confirmed=False,
         created_by=user,
     )
+    # Expenses typed straight into the new-shift form — no need to save, find
+    # the shift in the list and re-open it just to add a lunch receipt.
+    for desc, cents in expense_lines:
+        repos.create_expense(conn, shift_id=shift_id, amount_cents=cents, description=desc)
     return RedirectResponse("/shifts", status_code=status.HTTP_303_SEE_OTHER)
 
 
@@ -228,6 +263,7 @@ def update(
     rate_override: str = Form(""),
     flat_rate: str = Form(""),
     notes: str = Form(""),
+    confirm: str = Form("0"),
     conn=Depends(get_db),
     settings: Settings = Depends(get_settings),
     user: str = Depends(current_user),
@@ -259,6 +295,10 @@ def update(
         notes=_none_if_blank(notes),
         updated_by=user,
     )
+    if confirm == "1":
+        # "Save & confirm" button on the edit page: one round-trip to fix the
+        # times and sign the shift off.
+        repos.confirm_shift(conn, shift_id, updated_by=user)
     return RedirectResponse(f"/shifts/{shift_id}/edit", status_code=status.HTTP_303_SEE_OTHER)
 
 
@@ -333,6 +373,7 @@ def inline_editor(
             "end_local": end_local,
             "expenses": expenses,
             "expenses_total_cents": expenses_total,
+            "shots": screenshots.shots_for_shift(conn, shift_id),
             "confirm_on_save": bool(confirm_on_save),
             "row_id": row_id,
         },
@@ -347,10 +388,14 @@ def cancel_edit(
     settings: Settings = Depends(get_settings),
     user: str = Depends(current_user),
 ):
-    """Discard the inline editor and re-render the default dashboard state.
-    No write — the OOB refresh swaps the open/pending sections back to their
-    pre-edit cards."""
-    return _htmx_swap_with_oob(request, conn, settings, user)
+    """Discard the inline editor. No write. On the dashboard the OOB refresh
+    swaps the open/pending sections back to their pre-edit cards; elsewhere
+    (the /review page) we re-render just this shift's card in place."""
+    if _on_dashboard(request):
+        return _htmx_swap_with_oob(request, conn, settings, user)
+    from shifter.routes.dashboard import render_pending_card
+    row_id = request.query_params.get("row_id", f"review-shift-{shift_id}")
+    return HTMLResponse(render_pending_card(conn, settings, shift_id, row_id))
 
 
 @router.post("/{shift_id}/inline-save", response_class=HTMLResponse)
@@ -446,18 +491,21 @@ def pay_shift(
 def confirm(
     shift_id: int,
     request: Request,
+    next: str = Form(""),
     conn=Depends(get_db),
     settings: Settings = Depends(get_settings),
     user: str = Depends(current_user),
 ):
+    if repos.get_shift(conn, shift_id) is None:
+        raise HTTPException(status.HTTP_404_NOT_FOUND)
     repos.confirm_shift(conn, shift_id, updated_by=user)
-    # HTMX submission from the dashboard pending-review card: return empty
-    # body so the card is swapped out in place, plus OOB fragments so totals
-    # and pending-shifts counts re-render. Plain browser submit (no HTMX)
-    # falls back to the legacy redirect.
+    # HTMX submission from a review card: return empty body so the card is
+    # swapped out in place, plus (on the dashboard) OOB fragments so totals
+    # and pending counts re-render. Plain browser submit (shifts table, edit
+    # page) redirects back to where it came from via ``next``.
     if request.headers.get("HX-Request"):
         return _htmx_swap_with_oob(request, conn, settings, user)
-    return RedirectResponse("/shifts", status_code=status.HTTP_303_SEE_OTHER)
+    return RedirectResponse(_safe_next(next, "/shifts"), status_code=status.HTTP_303_SEE_OTHER)
 
 
 # --- expenses (HTMX-managed within shift edit page) --------------------------

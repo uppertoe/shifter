@@ -70,6 +70,70 @@
       });
     });
 
+    // Lightbox for snapshot thumbnails: <a href="/screenshots/…" data-lightbox>.
+    // First click opens the image fitted to the viewport; clicking the image
+    // toggles native-resolution zoom (the overlay scrolls); click the backdrop,
+    // the × or press Escape to close. Event-delegated so HTMX-swapped cards work.
+    function lightboxEl() { return document.getElementById("lightbox"); }
+    function closeLightbox() {
+      var lb = lightboxEl();
+      if (!lb) return;
+      lb.setAttribute("hidden", "");
+      lb.classList.remove("zoomed");
+      lb.querySelector("img").removeAttribute("src");
+      document.body.classList.remove("lightbox-open");
+    }
+    document.addEventListener("click", function (e) {
+      var link = e.target.closest("a[data-lightbox]");
+      if (!link) return;
+      var lb = lightboxEl();
+      if (!lb) return;   // no lightbox on this page: fall through to the plain link
+      e.preventDefault();
+      var img = lb.querySelector("img");
+      img.src = link.getAttribute("href");
+      img.alt = link.getAttribute("data-caption") || "";
+      lb.querySelector(".lightbox-caption").textContent = link.getAttribute("data-caption") || "";
+      lb.classList.remove("zoomed");
+      lb.removeAttribute("hidden");
+      document.body.classList.add("lightbox-open");
+    });
+    document.addEventListener("click", function (e) {
+      var lb = lightboxEl();
+      if (!lb || lb.hasAttribute("hidden")) return;
+      if (e.target.closest(".lightbox-close") || e.target === lb) { closeLightbox(); return; }
+      if (e.target.closest("#lightbox img")) {
+        lb.classList.toggle("zoomed");
+        if (lb.classList.contains("zoomed")) {
+          // Centre the zoomed image on the point that was clicked.
+          var img = e.target;
+          var rx = (e.clientX - img.getBoundingClientRect().left) / img.clientWidth;
+          var ry = (e.clientY - img.getBoundingClientRect().top) / img.clientHeight;
+          requestAnimationFrame(function () {
+            lb.scrollLeft = rx * img.naturalWidth - lb.clientWidth / 2;
+            lb.scrollTop  = ry * img.naturalHeight - lb.clientHeight / 2;
+          });
+        }
+      }
+    });
+    document.addEventListener("keydown", function (e) {
+      if (e.key === "Escape") closeLightbox();
+    });
+
+    // Add another blank expense row on the new-shift form.
+    document.addEventListener("click", function (e) {
+      var btn = e.target.closest("[data-add-expense-row]");
+      if (!btn) return;
+      e.preventDefault();
+      var list = document.getElementById(btn.getAttribute("data-add-expense-row"));
+      var tmpl = list && list.querySelector("template");
+      if (!tmpl) return;
+      list.insertBefore(tmpl.content.cloneNode(true), tmpl);
+      var rows = list.querySelectorAll(".expense-row");
+      var last = rows[rows.length - 1];
+      var first = last && last.querySelector("input");
+      if (first) first.focus();
+    });
+
     // Toggle a target element's [hidden] attribute on click. Used for
     // accordion-style table rows where the form row spans the full table
     // width (colspan) — neither <details> nor CSS sibling selectors can
@@ -103,6 +167,7 @@
       </ul>
       <ul>
         <li><a href="/shifts"   {% if p.startswith('/shifts')   %}class="active" aria-current="page"{% endif %}>Shifts</a></li>
+        <li><a href="/review"   {% if p.startswith('/review')   %}class="active" aria-current="page"{% endif %}>Review</a></li>
         <li><a href="/schedule" {% if p.startswith('/schedule') %}class="active" aria-current="page"{% endif %}>Schedule</a></li>
         <li><a href="/nannies"  {% if p.startswith('/nannies')  %}class="active" aria-current="page"{% endif %}>Nannies</a></li>
         <li><a href="/reports"  {% if p.startswith('/reports')  %}class="active" aria-current="page"{% endif %}>Reports</a></li>
@@ -113,5 +178,10 @@
     </nav>
   </header>
   <main class="container">{% block content %}{% endblock %}</main>
+  <div id="lightbox" class="lightbox" hidden role="dialog" aria-modal="true" aria-label="Snapshot">
+    <button type="button" class="lightbox-close" aria-label="Close">&times;</button>
+    <img alt="">
+    <div class="lightbox-caption"></div>
+  </div>
 </body>
 </html>

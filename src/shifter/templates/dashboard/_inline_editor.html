@@ -1,17 +1,29 @@
-{# Inline editor for a single shift, used on the dashboard.
+{# Inline editor for a single shift, used on the dashboard and /review cards.
    Context: shift, start_local, end_local, expenses, expenses_total_cents,
             confirm_on_save (bool — adds confirmed=1 + button label tweak),
             row_id (the outer <article id> we should swap on save).
    Wrapped in an <article> so it cleanly outerHTML-swaps the card it replaces.
-#}
-{% from "_macros.html" import datetime_field %}
+
+   Order matters: times → notes → expenses → Save. Everything the reviewer
+   needs to look at comes before the button that commits it, and Delete sits
+   last, on its own, so it can't be hit while reaching for Save. #}
+{% from "_macros.html" import datetime_field, shot_thumbs %}
+{% set form_id = "inline-form-" ~ shift.id %}
 <article id="{{ row_id }}" class="pending-shift inline-editing"
          style="--chip-bg: {{ nanny_color(nanny.id) }};">
   <header class="inline-editor-head">
     <strong class="nanny-chip">{{ nanny.name }}</strong>
     <small class="muted">edit shift #{{ shift.id }}</small>
   </header>
-  <form hx-post="/shifts/{{ shift.id }}/inline-save"
+  {% if shots and (shots.arrival or shots.departure) %}
+    {# Keep the evidence in view while the times are being corrected. #}
+    <div class="shot-strip">
+      {% if shots.arrival %}<figure>{{ shot_thumbs({'arrival': shots.arrival, 'departure': None}, empty_text='') }}<figcaption>Arrival</figcaption></figure>{% endif %}
+      {% if shots.departure %}<figure>{{ shot_thumbs({'arrival': None, 'departure': shots.departure}, empty_text='') }}<figcaption>Departure</figcaption></figure>{% endif %}
+    </div>
+  {% endif %}
+  <form id="{{ form_id }}"
+        hx-post="/shifts/{{ shift.id }}/inline-save"
         hx-target="#{{ row_id }}"
         hx-swap="outerHTML">
     <input type="hidden" name="confirm" value="{{ '1' if confirm_on_save else '0' }}">
@@ -26,20 +38,38 @@
     <label>Notes
       <textarea name="notes" rows="2" placeholder="optional">{{ shift.notes or '' }}</textarea>
     </label>
-    <div class="form-actions">
-      <button type="submit">
-        {% if confirm_on_save %}Save &amp; confirm{% else %}Save{% endif %}
-      </button>
-      <button type="button" class="secondary outline"
-              hx-get="/shifts/{{ shift.id }}/cancel-edit"
-              hx-target="#{{ row_id }}"
-              hx-swap="outerHTML">Cancel</button>
-    </div>
   </form>
 
-  {# Delete must be its own form — nested forms are invalid HTML and the
-     browser silently submits to the outer form's action. #}
+  {# Expenses are saved immediately (HTMX), independently of the shift form —
+     they sit outside it because nested forms are invalid HTML. #}
+  <h4>Expenses</h4>
+  <div id="expenses-block-{{ shift.id }}">
+    {% include "shifts/_expenses.html" %}
+  </div>
+  <form class="expense-add"
+        hx-post="/shifts/{{ shift.id }}/expenses"
+        hx-target="#expenses-block-{{ shift.id }}"
+        hx-swap="innerHTML"
+        hx-on::after-request="if(event.detail.successful) this.reset()">
+    <fieldset role="group">
+      <input name="description" placeholder="Description (e.g. lunch)" required>
+      <input name="amount" class="expense-amount" inputmode="decimal" placeholder="$0.00" required>
+      <button type="submit">Add</button>
+    </fieldset>
+  </form>
+
   <div class="form-actions">
+    <button type="submit" form="{{ form_id }}">
+      {% if confirm_on_save %}Save &amp; confirm{% else %}Save{% endif %}
+    </button>
+    <button type="button" class="secondary outline"
+            hx-get="/shifts/{{ shift.id }}/cancel-edit?row_id={{ row_id }}"
+            hx-target="#{{ row_id }}"
+            hx-swap="outerHTML">Cancel</button>
+    <a href="/shifts/{{ shift.id }}/edit" class="secondary muted-link"><small>Full edit page</small></a>
+  </div>
+
+  <div class="form-actions danger-zone">
     <details class="confirm">
       <summary class="confirm-trigger secondary outline">Delete shift</summary>
       <form hx-post="/shifts/{{ shift.id }}/delete"
@@ -49,20 +79,4 @@
       </form>
     </details>
   </div>
-
-  <hr>
-  <h4>Expenses</h4>
-  <div id="expenses-block-{{ shift.id }}">
-    {% include "shifts/_expenses.html" %}
-  </div>
-  <form hx-post="/shifts/{{ shift.id }}/expenses"
-        hx-target="#expenses-block-{{ shift.id }}"
-        hx-swap="innerHTML"
-        hx-on::after-request="if(event.detail.successful) this.reset()">
-    <fieldset role="group">
-      <input name="description" placeholder="Description (e.g. lunch)" required>
-      <input name="amount" inputmode="decimal" placeholder="$0.00" required>
-      <button type="submit">Add expense</button>
-    </fieldset>
-  </form>
 </article>

@@ -27,3 +27,24 @@
     {% endif %}
   </span>
 {% endmacro %}
+
+{# Arrival / departure snapshot thumbnails for a shift. `shots` is the dict from
+   screenshots.shots_for_shift(). Thumbnails open in the in-page lightbox (see
+   base.html) — click again inside it to zoom to native size. #}
+{% macro shot_thumbs(shots, empty_text="no snapshot") %}
+  {% if shots.arrival %}
+    <a href="/screenshots/{{ shots.arrival.filename }}" data-lightbox
+       data-caption="Arrival snapshot" title="Arrival snapshot — click to enlarge">
+      <img src="/screenshots/{{ shots.arrival.filename }}" alt="arrival" class="pending-thumb">
+    </a>
+  {% endif %}
+  {% if shots.departure %}
+    <a href="/screenshots/{{ shots.departure.filename }}" data-lightbox
+       data-caption="Departure snapshot" title="Departure snapshot — click to enlarge">
+      <img src="/screenshots/{{ shots.departure.filename }}" alt="departure" class="pending-thumb">
+    </a>
+  {% endif %}
+  {% if not shots.arrival and not shots.departure and empty_text %}
+    <small class="muted">{{ empty_text }}</small>
+  {% endif %}
+{% endmacro %}

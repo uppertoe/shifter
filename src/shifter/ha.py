@@ -41,7 +41,7 @@ from datetime import datetime, time, timedelta
 
 from shifter import repos, schedule
 from shifter.config import Settings
-from shifter.time_utils import ceil_15min, floor_15min
+from shifter.time_utils import ceil_15min
 
 
 @dataclass
@@ -205,10 +205,12 @@ def _rounded_arrival_start(
     expected_shift_id: int | None,
     nanny_id: int | None = None,
 ) -> datetime:
-    """Round arrival time DOWN to the nearest 15 min, but never before the
-    nanny's scheduled start for that day. If we have no expected_shift_id,
-    fall back to looking up by (nanny_id, date)."""
-    floored = floor_15min(occurred_at)
+    """Round arrival time UP to the nearest 15 min (07:58 → 08:00), but never
+    before the nanny's scheduled start for that day. Rounding up matches how
+    late starts were being corrected by hand in prod (07:58 → 08:00,
+    08:29 → 08:30), and mirrors the departure rule which also rounds up. If
+    we have no expected_shift_id, fall back to looking up by (nanny_id, date)."""
+    rounded = ceil_15min(occurred_at)
     expected = None
     if expected_shift_id is not None:
         expected = conn.execute(
@@ -223,13 +225,13 @@ def _rounded_arrival_start(
             (nanny_id, occurred_at.date().isoformat()),
         ).fetchone()
     if expected is None:
-        return floored
+        return rounded
     sched = datetime.combine(
         occurred_at.date(),
         time.fromisoformat(expected["start_time"]),
         tzinfo=occurred_at.tzinfo,
     )
-    return max(floored, sched)
+    return max(rounded, sched)
 
 
 def _create_arrival(

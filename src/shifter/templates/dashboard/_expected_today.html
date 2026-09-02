@@ -12,7 +12,14 @@
         </small>
         <small class="muted">
           {% if v.is_due %}
-            <strong>due now</strong> · auto-opens shortly
+            <strong>not arrived yet</strong> ·
+            {% if v.is_over %}
+              scheduled window has passed — start it by hand or cancel
+            {% elif v.minutes_to_auto_open > 0 %}
+              auto-opens at {{ format_dt(v.auto_open_at.isoformat(), tz).split(', ')[1] }} if no arrival is detected
+            {% else %}
+              auto-opens shortly
+            {% endif %}
           {% elif v.minutes_to_start < 60 %}
             starts in {{ v.minutes_to_start }}m
           {% else %}

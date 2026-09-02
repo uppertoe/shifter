@@ -7,6 +7,10 @@
   <a href="/shifts/new" role="button">New shift</a>
 </header>
 
+{% if filter_confirmed == 'no' and shifts %}
+  <p><small class="muted">Want the snapshots alongside? <a href="/review">Open the review page</a>.</small></p>
+{% endif %}
+
 <form method="get" action="/shifts" class="filter-bar">
   <fieldset role="group">
     <select name="nanny_id" onchange="this.form.submit()">
@@ -73,6 +77,12 @@
         </td>
         <td class="row-actions-cell">
           <div class="row-actions">
+            {% if not s.confirmed %}
+              <form method="post" action="/shifts/{{ s.id }}/confirm">
+                <input type="hidden" name="next" value="{{ current_url }}">
+                <button type="submit">Confirm</button>
+              </form>
+            {% endif %}
             {% if s.end_time and not s.paid_on %}
               <button type="button" class="secondary outline"
                       data-toggle-row="{{ pay_row_id }}" aria-expanded="false">Mark paid</button>

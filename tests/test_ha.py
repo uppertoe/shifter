@@ -343,7 +343,7 @@ def test_overnight_shift_under_threshold_still_consumes_departure(conn):
 
 # --- 15-min rounding -------------------------------------------------------
 
-def test_arrival_floors_start_to_nearest_15min(conn):
+def test_arrival_ceils_start_to_nearest_15min(conn):
     a, _ = _seed_two_nannies(conn)
     schedule.add_one_off(conn, nanny_id=a, on_date=date(2026, 5, 4),
                           start_time="07:00", end_time="18:00")
@@ -354,7 +354,7 @@ def test_arrival_floors_start_to_nearest_15min(conn):
         settings=_settings(),
     )
     shift = conn.execute("SELECT start_time FROM shifts WHERE id = ?", (r.shift_id,)).fetchone()
-    assert shift["start_time"].startswith("2026-05-04T07:15:00")
+    assert shift["start_time"].startswith("2026-05-04T07:30:00")
 
 
 def test_arrival_clamps_to_scheduled_start_when_early(conn):
@@ -622,8 +622,8 @@ def test_arrival_attach_ignored_when_two_nannies_expected(conn):
 
 
 def test_arrival_before_scheduled_start_clamps_to_schedule(conn):
-    """End-to-end: HA fires arrival 16 min early. floor_15min would round to
-    06:30, but the clamp in _rounded_arrival_start lifts the shift start to
+    """End-to-end: HA fires arrival 16 min early. ceil_15min would round to
+    06:45, but the clamp in _rounded_arrival_start lifts the shift start to
     07:00 — the rostered time. Early arrivals never get credited beyond the
     schedule.
     """
@@ -642,8 +642,8 @@ def test_arrival_before_scheduled_start_clamps_to_schedule(conn):
 
 
 def test_arrival_just_before_scheduled_start_clamps_to_schedule(conn):
-    """Same as above but on the other side of the 15-min mark: floor_15min
-    of 06:46 is 06:45, still before 07:00, so the clamp still wins."""
+    """Same as above but on the other side of the 15-min mark: ceil_15min
+    of 06:46 is 07:00, exactly the roster, so clamp and rounding agree."""
     a, _ = _seed_two_nannies(conn)
     schedule.add_one_off(conn, nanny_id=a, on_date=date(2026, 5, 4),
                           start_time="07:00", end_time="18:00")

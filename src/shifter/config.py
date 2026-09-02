@@ -33,6 +33,10 @@ class Settings(BaseSettings):
     # Signal-based HA architecture (ha_signals module).
     # Window (minutes) before/after scheduled shift start where an access_granted
     # is accepted as a nanny arrival.  Wide enough to absorb early/late arrivals.
+    # Also how long the auto-opener waits past the scheduled start before it
+    # falls back to opening the shift at the scheduled time (see
+    # schedule.auto_open_due_at) — once the window has closed, no HA arrival
+    # can set the real start any more, so the schedule is the best guess left.
     pre_shift_window_minutes: int = Field(default=90, ge=1)
     # Departure detection is suppressed for this many minutes after any
     # access_granted signal — absorbs the homeowner's own entry PIR / Frigate hit.

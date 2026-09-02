@@ -257,19 +257,40 @@ def pending_for_date(
     ]
 
 
+def auto_open_due_at(slot: ExpectedSlot, tz: ZoneInfo, settings) -> datetime:
+    """When the auto-opener is allowed to open a shift for `slot` if no HA
+    arrival has been detected by then.
+
+    Arrival detection (ha_signals: keypad access_granted within
+    ±pre_shift_window_minutes of the scheduled start) is the preferred way to
+    open a shift because it records the *actual* arrival time. The auto-opener
+    is only the fallback for the shifts where nobody used the keypad (the nanny
+    was let in, the door was already open, ...). So it waits until the arrival
+    window has closed — scheduled start + pre_shift_window_minutes — before it
+    pins the shift at the scheduled start. Capped at half the slot length so a
+    short slot still gets opened while it is in progress.
+    """
+    start_dt, end_dt = slot_window(slot, tz)
+    grace = timedelta(minutes=settings.pre_shift_window_minutes)
+    half = (end_dt - start_dt) / 2
+    return start_dt + min(grace, half)
+
+
 def auto_open_due(
     conn: sqlite3.Connection, *, now: datetime, settings
 ) -> list[int]:
-    """Open shifts for any expected slot whose scheduled window is in progress
-    and that doesn't already have a matching shift. Returns the ids of any
-    shifts created.
+    """Open shifts for any expected slot whose arrival window has closed (see
+    auto_open_due_at), whose scheduled window is still in progress, and that
+    doesn't already have a matching shift. Returns the ids of any shifts
+    created.
 
     Scans today AND yesterday so overnight shifts (e.g. 19:00 Mon → 06:00 Tue)
     get opened correctly if the app restarts mid-shift.
 
-    The created shift starts at the scheduled start, not at `now` — the
-    timeline reflects the schedule rather than polling jitter. confirmed=0 so
-    a human still reviews it (same as HA-sourced shifts).
+    The created shift starts at the scheduled start, not at `now` — by the
+    time the fallback fires we have no better information than the schedule,
+    and the shift is left confirmed=0 so a human reviews it (same as
+    HA-sourced shifts).
     """
     from shifter import repos  # local import to avoid module cycle
 
@@ -279,7 +300,7 @@ def auto_open_due(
     for d in (today - timedelta(days=1), today):
         for slot in expected_on_date(conn, d, include_cancelled=False):
             start_dt, end_dt = slot_window(slot, tz)
-            if start_dt > now or end_dt <= now:
+            if end_dt <= now or auto_open_due_at(slot, tz, settings) > now:
                 continue
             if _slot_opened(conn, slot, tz=tz):
                 continue

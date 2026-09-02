@@ -25,13 +25,13 @@
           {% set shift_exps_total = shift_exps | sum(attribute='amount_cents') %}
           {% set pay_row_id = 'pay-row-unpaid-shift-' ~ s.shift_id %}
           <tr>
-            <td>{{ format_date(s.start.isoformat(), tz) }}</td>
-            <td><small>
-              {{ format_dt(s.start.isoformat(), tz).split(', ')[1] }} –
-              {{ format_dt(s.end.isoformat(), tz).split(', ')[1] if s.end else 'open' }}
+            <td class="nowrap">{{ format_date_short(s.start.isoformat(), tz) }}</td>
+            <td class="nowrap"><small>
+              {{ format_time(s.start.isoformat(), tz) }} –
+              {{ format_time(s.end.isoformat(), tz) if s.end else 'open' }}
             </small></td>
-            <td>{{ "%.2f"|format(s.hours|float) }}h</td>
-            <td>{{ format_cents(s.pay_cents) }}</td>
+            <td class="nowrap num">{{ "%.2f"|format(s.hours|float) }}h</td>
+            <td class="nowrap num">{{ format_cents(s.pay_cents) }}</td>
             <td>
               <button type="button" class="secondary outline"
                       data-toggle-row="{{ pay_row_id }}" aria-expanded="false">Mark paid</button>
@@ -83,12 +83,12 @@
         {% for e in summary.expenses %}
           {% set pay_row_id = 'pay-row-unpaid-exp-' ~ e.expense_id %}
           <tr>
-            <td>{{ format_date(e.shift_start.isoformat(), tz) }}</td>
+            <td class="nowrap">{{ format_date_short(e.shift_start.isoformat(), tz) }}</td>
             <td>
               {{ e.description }}
               {% if e.pending_review %}<small class="pill pending">review</small>{% endif %}
             </td>
-            <td>{{ format_cents(e.amount_cents) }}</td>
+            <td class="nowrap num">{{ format_cents(e.amount_cents) }}</td>
             <td>
               <button type="button" class="secondary outline"
                       data-toggle-row="{{ pay_row_id }}" aria-expanded="false">Mark paid</button>

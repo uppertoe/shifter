@@ -3,7 +3,7 @@
 
 {% block content %}
 <header class="page-head">
-  <h1>Today, {{ format_date(today_iso ~ 'T00:00:00+10:00', tz) }}</h1>
+  <h1>Today <small class="muted h1-sub">{{ format_date(today_iso ~ 'T00:00:00', tz) }}</small></h1>
   <a href="/shifts/new" role="button">New shift</a>
 </header>
 

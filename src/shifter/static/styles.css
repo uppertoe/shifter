@@ -5,7 +5,15 @@
   padding-block: 0.25rem;
   margin-bottom: 1rem;
 }
-.topbar nav { padding: 0; }
+.topbar nav { padding: 0; flex-wrap: wrap; row-gap: 0; }
+.topbar nav ul { flex-wrap: wrap; }
+/* Phones: the five nav items don't fit on one row beside the brand and the
+   username, so drop the username and tighten the item spacing. */
+@media (max-width: 640px) {
+  .topbar nav ul:last-child { display: none; }
+  .topbar nav li { padding-inline: 0.35rem; }
+  .topbar nav ul:first-child li { padding-left: 0; }
+}
 /* Indicate the active page with color + an underline. Don't change font-weight,
    because bold characters are wider and would reflow the surrounding nav items. */
 .topbar nav a.active {
@@ -39,7 +47,83 @@
   min-height: 3rem;
 }
 .page-head h1 { margin: 0; line-height: 1.2; }
-.page-head a[role="button"], .page-head button { margin: 0; }
+.page-head a[role="button"], .page-head button { margin: 0; white-space: nowrap; flex-shrink: 0; }
+.page-head .h1-sub { display: block; font-size: 0.5em; font-weight: 500; margin-top: 0.15rem; }
+@media (max-width: 640px) {
+  .page-head { min-height: 0; gap: 0.75rem; }
+  .page-head h1 { font-size: 1.6rem; }
+}
+
+/* Dense tables: keep dates, times and money on one line; let the <figure>
+   scroll sideways on phones instead of wrapping every cell over 3-4 rows. */
+td.nowrap, th.nowrap, .nowrap { white-space: nowrap; }
+td.num { font-variant-numeric: tabular-nums; }
+/* Dense list tables: slightly tighter cell padding than Pico's 0.75rem so a
+   pending row's Confirm / Pay / Edit fits inside the container. */
+table.dense th, table.dense td { padding-inline: 0.6rem; }
+table.dense th:first-child, table.dense td:first-child { padding-left: 0.5rem; }
+table.dense th:last-child, table.dense td:last-child { padding-right: 0.5rem; text-align: right; }
+
+/* Below desktop width the shifts table becomes a stack of two-column cards —
+   date / nanny / times down the left, pay / status / actions down the right —
+   so nothing is hidden off the right edge and nothing needs sideways
+   scrolling. (A pending row's two pills + Confirm + Edit don't fit a tablet
+   table row.) Column order in the markup: Date, Nanny, Times, Hours, Pay,
+   Status, actions. */
+@media (max-width: 1000px) {
+  table.dense thead { display: none; }
+  table.dense tbody tr:not(.pay-row) {
+    display: grid;
+    grid-template-columns: 1fr auto;
+    grid-template-rows: auto auto auto;
+    column-gap: 0.75rem; row-gap: 0.3rem;
+    padding: 0.7rem 0.5rem;
+    border-bottom: 1px solid var(--pico-muted-border-color);
+  }
+  table.dense tbody tr:not(.pay-row) > td {
+    display: block; padding: 0; border: none; background: none;
+    font-size: 0.95rem;
+  }
+  table.dense tbody tr:not(.pay-row) > td.hide-sm,
+  table.dense tbody tr:not(.pay-row) > td.hide-md { display: none; }
+  table.dense tbody tr:not(.pay-row) > td:nth-child(1) { grid-area: 1 / 1; font-weight: 600; }
+  table.dense tbody tr:not(.pay-row) > td:nth-child(2) { grid-area: 2 / 1; }
+  table.dense tbody tr:not(.pay-row) > td:nth-child(3) { grid-area: 3 / 1; }
+  table.dense tbody tr:not(.pay-row) > td:nth-child(5) { grid-area: 1 / 2; justify-self: end; }
+  table.dense tbody tr:not(.pay-row) > td:nth-child(6) { grid-area: 2 / 2; justify-self: end; }
+  table.dense tbody tr:not(.pay-row) > td:nth-child(7) { grid-area: 3 / 2; justify-self: end; }
+  table.dense tr.row-pending { border-left: 3px solid var(--pico-primary); }
+  table.dense tr.row-pending td:first-child { border-left: none; }
+  table.dense tr.pay-row, table.dense tr.pay-row > td { display: block; }
+  table.dense tr.pay-row > td { padding: 0.6rem 0.5rem; }
+}
+/* Secondary columns (hours, expenses) drop out on phones so Pay, Status and
+   the actions stay reachable without sideways scrolling. */
+@media (max-width: 720px) { .hide-sm { display: none; } }
+@media (max-width: 1000px) { .hide-md { display: none; } }
+/* Compact table cells on phones — Pico's 0.75rem cell padding plus the
+   figure gutter left only three columns visible on a 390px screen. */
+@media (max-width: 720px) {
+  table:not(.calendar) th, table:not(.calendar) td {
+    padding: 0.55rem 0.5rem;
+    font-size: 0.9rem;
+  }
+  table:not(.calendar) th:first-child, table:not(.calendar) td:first-child { padding-left: 0.25rem; }
+  .nanny-chip { font-size: 0.78rem; padding: 0.05rem 0.5rem; }
+}
+
+/* Nanny identity: a small filled pill in the nanny's calendar colour, so the
+   dashboard cards, review cards and shifts table read the same as the
+   schedule chips. --chip-bg is set inline by the template. */
+.nanny-chip {
+  display: inline-flex; align-items: center;
+  padding: 0.1rem 0.6rem;
+  border-radius: 999px;
+  background: var(--chip-bg, var(--pico-secondary-background));
+  color: #fff;
+  font-size: 0.85rem; font-weight: 600; line-height: 1.5;
+  width: fit-content;
+}
 
 .nanny.inactive { opacity: 0.55; }
 
@@ -64,9 +148,19 @@
 .nanny details form button { margin-bottom: 0; }
 .nanny details table { margin-block: 0.5rem; }
 .nanny > details {
-  margin-top: 1rem;
-  padding-top: 1rem;
+  margin-top: 0.75rem;
+  padding-top: 0.75rem;
   border-top: 1px solid var(--pico-muted-border-color);
+}
+.nanny > details:first-of-type { margin-top: 0.25rem; }
+.nanny .nanny-head { margin-bottom: 0.5rem; }
+.nanny .rename-form { margin: 0.25rem 0 0.5rem; }
+@media (max-width: 520px) {
+  /* Icon-only visibility toggle so Rename / eye / Deactivate fit one row. */
+  .nanny-actions .btn-icon span { display: none; }
+  .nanny-actions[role="group"] > button { padding-inline: 0.75rem; }
+  .nanny-head { flex-direction: column; align-items: stretch; }
+  .nanny-actions[role="group"] { width: 100%; }
 }
 .nanny > details > summary { padding-block: 0.25rem; }
 
@@ -77,6 +171,16 @@
 .filter-bar fieldset { margin-bottom: 0; }
 .filter-bar .open-toggle { display: inline-flex; align-items: center; gap: 0.5rem; margin-left: 0.5rem; }
 .filter-bar .open-toggle input { margin: 0; }
+.filter-bar .open-toggle { white-space: nowrap; }
+@media (max-width: 720px) {
+  /* Three selects and a checkbox don't fit one segmented row on a phone —
+     two per row instead, with the checkbox on its own line. */
+  .filter-bar fieldset[role="group"] {
+    display: grid; grid-template-columns: 1fr 1fr; gap: 0.4rem;
+  }
+  .filter-bar fieldset[role="group"] > * { border-radius: var(--pico-border-radius) !important; margin: 0; }
+  .filter-bar .open-toggle { grid-column: 1 / -1; margin-left: 0; }
+}
 
 .row-pending td:first-child { border-left: 3px solid var(--pico-primary); }
 
@@ -84,10 +188,11 @@
    row height is constant regardless of how many badges apply. */
 .pill-group {
   display: flex;
-  flex-wrap: wrap;
+  flex-wrap: nowrap;   /* pending + unpaid side by side, never stacked */
   gap: 0.3rem;
   align-items: center;
 }
+.pill-group .pill { white-space: nowrap; }
 
 /* Action column: Edit and Mark-paid must be the same visual size so rows
    don't grow/shrink based on which actions are available. The
@@ -101,12 +206,13 @@
   flex-wrap: nowrap;
 }
 .row-actions > * { margin: 0; }
-.row-actions form { display: inline; margin: 0; }
+.row-actions form { display: inline-flex; margin: 0; }
+.row-actions form button { margin: 0; }   /* Pico's form-button bottom margin threw Confirm off-centre */
 .row-actions a[role="button"],
 .row-actions button,
 .row-actions details.confirm > summary {
   height: 2.25rem;
-  padding: 0 0.85rem;
+  padding: 0 0.75rem;
   display: inline-flex;
   align-items: center;
   justify-content: center;
@@ -195,8 +301,8 @@
   margin-bottom: 0;
 }
 .datetime-field .dt-time {
-  flex: 1 1 6rem;
-  min-width: 6rem;
+  flex: 1 1 7.5rem;
+  min-width: 7.5rem;   /* "07:00 am" + the picker icon; 6rem clipped the text */
   margin-bottom: 0;
 }
 .datetime-field .input-clear-btn {
@@ -207,6 +313,9 @@
 .pill.pending { background: #1565c0; color: #fff; }
 .pill.open    { background: #6d4c41; color: #fff; }
 .pill.stale   { background: #b88200; color: #fff; }
+
+/* Pico's <hgroup> in the nanny header is a flex child; stop it stretching. */
+.nanny-head hgroup { flex: 1 1 auto; }
 
 /* shift edit form */
 form .grid { gap: 0.75rem; }
@@ -325,7 +434,7 @@ main > section:first-child { margin-block-start: 0; }
   padding: 0.75rem 1rem;
   margin-bottom: 0.5rem;
 }
-.pending-meta { display: flex; flex-direction: column; gap: 0.15rem; }
+.pending-meta { display: flex; flex-direction: column; align-items: flex-start; gap: 0.15rem; }
 .pending-shots { display: flex; gap: 0.4rem; }
 .pending-thumb {
   height: 4.5rem; width: auto; max-width: 8rem;
@@ -373,10 +482,37 @@ main > section:first-child { margin-block-start: 0; }
 }
 .pending-actions details.confirm[open] > form input,
 .pending-actions details.confirm[open] > form button { margin: 0; }
-@media (max-width: 720px) {
-  .pending-shift { grid-template-columns: 1fr; }
-  .pending-actions { flex-wrap: wrap; }
+/* Card accent in the nanny's colour, so a row's owner is visible before you
+   read the name. */
+.pending-shift { border-left: 4px solid var(--chip-bg, transparent); }
+/* Tablets: the fixed 18rem + 20rem columns overflow the card (they were sized
+   for a desktop container). Let the snapshot and action columns size to their
+   content; below 720px stack everything. */
+@media (max-width: 1000px) {
+  .pending-shift { grid-template-columns: minmax(9rem, 1fr) auto auto; }
+  .pending-actions { justify-self: end; }
 }
+@media (max-width: 720px) {
+  .pending-shift { grid-template-columns: 1fr; gap: 0.6rem; }
+  .pending-actions { flex-wrap: wrap; justify-self: start; }
+  .pending-actions details.confirm[open] > form,
+  .pending-actions details.confirm[open] > p { left: 0; right: auto; }
+}
+
+/* Expected-slot inline editor: chip, two time inputs and the buttons on one
+   wrapping row. Without this the inputs went full-width and stacked. */
+.expected-editor {
+  display: flex; flex-wrap: wrap; align-items: center; gap: 0.6rem 0.9rem;
+  margin: 0;
+}
+.expected-editor > * { margin: 0; }
+.expected-editor label {
+  display: inline-flex; align-items: center; gap: 0.45rem;
+  font-size: 0.875rem; color: var(--pico-muted-color);
+}
+.expected-editor input[type="time"] { width: auto; min-width: 8rem; margin: 0; height: 2.5rem; padding: 0 0.5rem; }
+.expected-editor button { width: auto; height: 2.5rem; line-height: 1; }
+.pending-shift.editing { display: block; }
 
 .banner-warn {
   display: flex; align-items: center; justify-content: space-between; gap: 1rem;
@@ -587,7 +723,13 @@ details.confirm small { display: block; margin-top: 0.25rem; }
 
 .month-nav { display: flex; align-items: center; justify-content: space-between; gap: 1rem; margin-bottom: 0.5rem; }
 .month-nav strong { font-size: 1.1rem; }
-.month-nav a[role="button"] { margin: 0; }
+.month-nav a[role="button"] { margin: 0; white-space: nowrap; }
+@media (max-width: 520px) {
+  .month-nav a[role="button"] { padding-inline: 0.7rem; font-size: 0.875rem; }
+  table.calendar td { padding: 0.2rem; height: 4.5rem; }
+  button.chip small { display: none; }   /* name only — the time doesn't fit */
+  .schedule-controls { padding: 0.75rem 0.9rem; }
+}
 
 table.calendar { table-layout: fixed; width: 100%; }
 table.calendar th { text-align: center; padding: 0.4rem 0; font-weight: 500; color: var(--pico-muted-color); border-bottom: 1px solid var(--pico-muted-border-color); }

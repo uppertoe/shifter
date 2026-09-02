@@ -376,6 +376,7 @@ def inline_editor(
             "shots": screenshots.shots_for_shift(conn, shift_id),
             "confirm_on_save": bool(confirm_on_save),
             "row_id": row_id,
+            "tz": settings.zoneinfo,
         },
     )
 
@@ -536,7 +537,8 @@ def add_expense(
     return templates.TemplateResponse(
         request,
         "shifts/_expenses.html",
-        {"shift_id": shift_id, "expenses": expenses, "expenses_total_cents": total},
+        {"shift_id": shift_id, "expenses": expenses, "expenses_total_cents": total,
+         "tz": settings.zoneinfo},
     )
 
 
@@ -546,6 +548,7 @@ def delete_expense(
     expense_id: int,
     request: Request,
     conn=Depends(get_db),
+    settings: Settings = Depends(get_settings),
     user: str = Depends(current_user),
 ):
     repos.delete_expense(conn, expense_id)
@@ -554,5 +557,6 @@ def delete_expense(
     return templates.TemplateResponse(
         request,
         "shifts/_expenses.html",
-        {"shift_id": shift_id, "expenses": expenses, "expenses_total_cents": total},
+        {"shift_id": shift_id, "expenses": expenses, "expenses_total_cents": total,
+         "tz": settings.zoneinfo},
     )

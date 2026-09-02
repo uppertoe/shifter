@@ -1081,3 +1081,18 @@ def test_current_shift_counts_unresolved_and_returns_last_event(client, conn):
     assert body["unresolved_count"] == 2
     assert body["last_event"]["resolution"] == "arrival"
     assert body["last_event"]["occurred_at"] == "2026-05-04T09:00:00+10:00"
+
+
+def test_edit_page_blank_notes_not_rendered_as_none(client, conn):
+    """Regression: a NULL notes column rendered the literal string 'None' in the
+    textarea, which would then be saved back as the note on the next Save."""
+    nid = conn.execute("INSERT INTO nannies (name) VALUES ('A')").lastrowid
+    sid = conn.execute(
+        "INSERT INTO shifts (nanny_id, start_time, end_time, source, confirmed,"
+        " created_by, updated_by) VALUES (?, '2026-05-04T07:00:00+10:00',"
+        " '2026-05-04T17:00:00+10:00', 'ha', 0, 'x', 'x')", (nid,),
+    ).lastrowid
+    r = client.get(f"/shifts/{sid}/edit", headers={"Remote-User": "alice"})
+    assert r.status_code == 200
+    assert 'placeholder="optional"></textarea>' in r.text
+    assert ">None</textarea>" not in r.text

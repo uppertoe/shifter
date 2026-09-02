@@ -5,7 +5,7 @@
     <p>{{ format_cents(today_pay_cents) }}</p>
   </article>
   <article class="stat">
-    <small class="muted">This week (since {{ week_start }})</small>
+    <small class="muted">This week <span class="nowrap">(from {{ format_date_short(week_start.isoformat() ~ 'T00:00:00', tz) }})</span></small>
     <h3>{{ "%.1f"|format(week_hours) }}h</h3>
     <p>{{ format_cents(week_pay_cents) }}</p>
   </article>

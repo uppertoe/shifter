@@ -49,6 +49,38 @@ def format_date(iso: str | None, tz: ZoneInfo) -> str:
     return f"{dt.strftime('%a')} {dt.day} {dt.strftime('%b %Y')}"
 
 
+def format_date_short(iso: str | None, tz: ZoneInfo, *, now: datetime | None = None) -> str:
+    """'Tue 1 Sep' — the year only when it differs from the current one. Used in
+    dense tables where 'Tue 1 Sep 2026' wrapped onto three lines on a phone."""
+    if not iso:
+        return "—"
+    dt = datetime.fromisoformat(iso).astimezone(tz)
+    this_year = (now or datetime.now(tz)).year
+    base = f"{dt.strftime('%a')} {dt.day} {dt.strftime('%b')}"
+    return base if dt.year == this_year else f"{base} {dt.year}"
+
+
+def format_time(iso: str | None, tz: ZoneInfo) -> str:
+    """'7:00am' — time-of-day only."""
+    if not iso:
+        return "—"
+    dt = datetime.fromisoformat(iso).astimezone(tz)
+    hour12 = dt.hour % 12 or 12
+    return f"{hour12}:{dt.minute:02d}{'am' if dt.hour < 12 else 'pm'}"
+
+
+def format_range(start_iso: str, end_iso: str | None, tz: ZoneInfo) -> str:
+    """'Mon 31 Aug, 7:00am – 6:15pm', or with the second date spelled out when
+    the shift crosses midnight; 'open' when there is no end yet."""
+    if not end_iso:
+        return f"{format_dt(start_iso, tz)} – open"
+    start = datetime.fromisoformat(start_iso).astimezone(tz)
+    end = datetime.fromisoformat(end_iso).astimezone(tz)
+    if start.date() == end.date():
+        return f"{format_dt(start_iso, tz)} – {format_time(end_iso, tz)}"
+    return f"{format_dt(start_iso, tz)} – {format_dt(end_iso, tz)}"
+
+
 def format_duration(start_iso: str, end_iso: str | None, *, now: datetime | None = None) -> str:
     """e.g. '8h 30m' or '8h 30m (open)' if end is None."""
     start = datetime.fromisoformat(start_iso)

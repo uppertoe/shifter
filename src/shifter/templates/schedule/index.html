@@ -7,8 +7,6 @@
 </header>
 
 <section>
-  <h3>Calendar</h3>
-
   <article class="schedule-controls">
     <p class="muted"><small>Pick a nanny and default times, then click empty days to add an expected shift. Click an existing chip once to cancel it (e.g. sick day), again to delete; recurring slots restore on the third click.</small></p>
     <div class="schedule-picker">
@@ -33,9 +31,9 @@
   </article>
 
   <nav class="month-nav">
-    <a role="button" class="secondary outline" href="/schedule?month={{ prev_month_str }}">← {{ prev_month_str }}</a>
+    <a role="button" class="secondary outline" href="/schedule?month={{ prev_month_str }}{% if selected_nanny %}&nanny_id={{ selected_nanny.id }}{% endif %}">← {{ prev_month_label }}</a>
     <strong>{{ month_label }}</strong>
-    <a role="button" class="secondary outline" href="/schedule?month={{ next_month_str }}">{{ next_month_str }} →</a>
+    <a role="button" class="secondary outline" href="/schedule?month={{ next_month_str }}{% if selected_nanny %}&nanny_id={{ selected_nanny.id }}{% endif %}">{{ next_month_label }} →</a>
   </nav>
 
   <table class="calendar">

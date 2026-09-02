@@ -25,7 +25,9 @@ templates = Jinja2Templates(directory=str(TEMPLATES_DIR))
 
 # Register helpers used in templates so we don't have to thread them through every context.
 from shifter.money import format_cents, format_cents_per_hour  # noqa: E402
-from shifter.time_utils import format_date, format_dt, format_duration  # noqa: E402
+from shifter.time_utils import (  # noqa: E402
+    format_date, format_date_short, format_dt, format_duration, format_range, format_time,
+)
 
 # Stable, distinguishable palette. Picked for legibility on both light & dark
 # Pico themes with white foreground text. Extend if you ever need more nannies.
@@ -49,6 +51,9 @@ templates.env.globals["format_cents"] = format_cents
 templates.env.globals["format_cents_per_hour"] = format_cents_per_hour
 templates.env.globals["format_dt"] = format_dt
 templates.env.globals["format_date"] = format_date
+templates.env.globals["format_date_short"] = format_date_short
+templates.env.globals["format_time"] = format_time
+templates.env.globals["format_range"] = format_range
 templates.env.globals["format_duration"] = format_duration
 templates.env.globals["nanny_color"] = nanny_color
 

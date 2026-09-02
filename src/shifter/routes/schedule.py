@@ -87,6 +87,8 @@ def index(
             "dow_names": DOW_NAMES,
             "prev_month_str": prev_month.strftime("%Y-%m"),
             "next_month_str": next_month.strftime("%Y-%m"),
+            "prev_month_label": prev_month.strftime("%b %Y"),
+            "next_month_label": next_month.strftime("%b %Y"),
             "default_start": "07:00",
             "default_end": "18:00",
         },

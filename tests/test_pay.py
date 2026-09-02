@@ -206,3 +206,14 @@ def test_unpaid_summary_includes_open_when_requested(conn):
     s = pay.unpaid_summary(conn, nid, now=now, include_open=True)
     assert sid in {sh.shift_id for sh in s.shifts}
     assert s.shifts_subtotal_cents == 7000
+
+
+def test_format_range_same_day_and_overnight():
+    from zoneinfo import ZoneInfo
+    from shifter.time_utils import format_range
+    mel = ZoneInfo("Australia/Melbourne")
+    assert format_range("2026-08-31T07:00:00+10:00", "2026-08-31T18:15:00+10:00", mel) == \
+        "Mon 31 Aug, 7:00am – 6:15pm"
+    assert format_range("2026-08-31T19:00:00+10:00", "2026-09-01T06:00:00+10:00", mel) == \
+        "Mon 31 Aug, 7:00pm – Tue 1 Sep, 6:00am"
+    assert format_range("2026-08-31T07:00:00+10:00", None, mel) == "Mon 31 Aug, 7:00am – open"

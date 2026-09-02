@@ -67,7 +67,7 @@
   </div>
 
   <label>Notes
-    <textarea name="notes" rows="2" placeholder="optional">{{ shift.notes if shift else '' }}</textarea>
+    <textarea name="notes" rows="2" placeholder="optional">{{ (shift.notes or '') if shift else '' }}</textarea>
   </label>
 
   {% if not shift %}

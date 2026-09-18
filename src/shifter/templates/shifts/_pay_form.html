@@ -1,0 +1,40 @@
+{# One shift's "mark paid" form. Lives in a hidden accordion <tr> opened by a
+   data-toggle-row button (see base.html).
+   Context: shift_id, pay_row_id, today_iso, unpaid_expenses_count,
+   unpaid_expenses_total_cents, next (optional — where to land afterwards). #}
+{% set _exp_rows_id = pay_row_id ~ '-expenses' %}
+<form method="post" action="/shifts/{{ shift_id }}/pay" class="pay-form">
+  {% if next %}<input type="hidden" name="next" value="{{ next }}">{% endif %}
+  <label>Paid on
+    <input type="date" name="paid_on" value="{{ today_iso }}" required>
+  </label>
+  {% if unpaid_expenses_count %}
+    <label class="inline-check">
+      <input type="checkbox" name="include_expenses" value="1" checked>
+      Also pay {{ unpaid_expenses_count }} expense{{ '' if unpaid_expenses_count == 1 else 's' }}
+      ({{ format_cents(unpaid_expenses_total_cents) }})
+    </label>
+  {% endif %}
+  {# Expense lines typed here are created and settled with this payment, so a
+     receipt handed over at pay time doesn't need a trip to the edit page. #}
+  <div class="pay-form-expenses">
+    <div class="expense-rows" id="{{ _exp_rows_id }}">
+      <div class="expense-row">
+        <input name="expense_description" class="expense-desc" placeholder="Add an expense (e.g. lunch)">
+        <input name="expense_amount" class="expense-amount" inputmode="decimal" placeholder="$0.00">
+      </div>
+      <template>
+        <div class="expense-row">
+          <input name="expense_description" class="expense-desc" placeholder="Description">
+          <input name="expense_amount" class="expense-amount" inputmode="decimal" placeholder="$0.00">
+        </div>
+      </template>
+    </div>
+    <button type="button" class="secondary outline" data-add-expense-row="{{ _exp_rows_id }}">+ Another expense</button>
+  </div>
+  <div class="pay-form-actions">
+    <button type="submit">Confirm paid</button>
+    <button type="button" class="secondary outline"
+            data-toggle-row="{{ pay_row_id }}">Cancel</button>
+  </div>
+</form>

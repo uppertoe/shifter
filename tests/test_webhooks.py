@@ -449,6 +449,95 @@ def test_pay_shift_does_not_touch_expenses_without_checkbox(client, conn):
     ).fetchone()["paid_on"] is None
 
 
+def test_pay_shift_creates_and_settles_expenses_typed_into_pay_form(client, conn):
+    """Expense lines typed into the pay form are created on the shift and
+    paid with the same date, regardless of the include_expenses checkbox —
+    that checkbox only governs expenses that already existed. Blank rows
+    (the empty template row the form always sends) are skipped."""
+    nid = conn.execute("INSERT INTO nannies (name) VALUES ('A')").lastrowid
+    sid = conn.execute(
+        "INSERT INTO shifts (nanny_id, start_time, end_time, source, confirmed,"
+        " created_by, updated_by) VALUES (?, '2026-05-04T07:00:00+10:00',"
+        " '2026-05-04T17:00:00+10:00', 'manual', 1, 'x', 'x')", (nid,),
+    ).lastrowid
+    eid_existing = conn.execute(
+        "INSERT INTO expenses (shift_id, amount_cents, description)"
+        " VALUES (?, 500, 'lunch')", (sid,),
+    ).lastrowid
+    r = client.post(
+        f"/shifts/{sid}/pay",
+        data={
+            "paid_on": "2026-05-06",
+            # no include_expenses: the pre-existing lunch stays unpaid
+            "expense_description": ["parking", "", "coffee"],
+            "expense_amount": ["12.50", "", "4"],
+        },
+        headers={"Remote-User": "alice"},
+        follow_redirects=False,
+    )
+    assert r.status_code == 303
+    rows = conn.execute(
+        "SELECT description, amount_cents, paid_on FROM expenses"
+        " WHERE shift_id = ? ORDER BY id", (sid,),
+    ).fetchall()
+    assert [(r["description"], r["amount_cents"], r["paid_on"]) for r in rows] == [
+        ("lunch", 500, None),
+        ("parking", 1250, "2026-05-06"),
+        ("coffee", 400, "2026-05-06"),
+    ]
+    assert conn.execute(
+        "SELECT paid_on FROM expenses WHERE id = ?", (eid_existing,)
+    ).fetchone()["paid_on"] is None
+
+
+def test_pay_shift_half_filled_expense_row_is_400_and_nothing_paid(client, conn):
+    """A description without an amount (or vice versa) rejects the whole
+    submission before the shift is touched, so a typo can't leave the shift
+    marked paid with the expense silently dropped."""
+    nid = conn.execute("INSERT INTO nannies (name) VALUES ('A')").lastrowid
+    sid = conn.execute(
+        "INSERT INTO shifts (nanny_id, start_time, end_time, source, confirmed,"
+        " created_by, updated_by) VALUES (?, '2026-05-04T07:00:00+10:00',"
+        " '2026-05-04T17:00:00+10:00', 'manual', 1, 'x', 'x')", (nid,),
+    ).lastrowid
+    r = client.post(
+        f"/shifts/{sid}/pay",
+        data={"paid_on": "2026-05-06",
+              "expense_description": ["parking"], "expense_amount": [""]},
+        headers={"Remote-User": "alice"},
+    )
+    assert r.status_code == 400
+    assert conn.execute(
+        "SELECT paid_on FROM shifts WHERE id = ?", (sid,)
+    ).fetchone()["paid_on"] is None
+    assert conn.execute(
+        "SELECT COUNT(*) AS n FROM expenses WHERE shift_id = ?", (sid,)
+    ).fetchone()["n"] == 0
+
+
+def test_pay_forms_render_expense_inputs(client, conn):
+    """Both places a shift can be marked paid — the shifts table and the
+    nanny's Owed page — carry the add-expense inputs in the pay form."""
+    nid = conn.execute("INSERT INTO nannies (name) VALUES ('A')").lastrowid
+    # Owed page shows "All paid up" when nothing is owed, so the shift needs a
+    # non-zero rate to render its pay row at all.
+    conn.execute(
+        "INSERT INTO pay_rates (nanny_id, rate_cents, effective_from)"
+        " VALUES (?, 3000, '2026-01-01')", (nid,),
+    )
+    sid = conn.execute(
+        "INSERT INTO shifts (nanny_id, start_time, end_time, source, confirmed,"
+        " created_by, updated_by) VALUES (?, '2026-05-04T07:00:00+10:00',"
+        " '2026-05-04T17:00:00+10:00', 'manual', 1, 'x', 'x')", (nid,),
+    ).lastrowid
+    for url in ("/shifts", f"/nannies/{nid}/unpaid"):
+        r = client.get(url, headers={"Remote-User": "alice"})
+        assert r.status_code == 200, url
+        assert f'action="/shifts/{sid}/pay"' in r.text, url
+        assert 'name="expense_description"' in r.text, url
+        assert 'name="expense_amount"' in r.text, url
+
+
 def test_pay_shift_redirects_to_next_when_safe(client, conn):
     nid = conn.execute("INSERT INTO nannies (name) VALUES ('A')").lastrowid
     sid = conn.execute(

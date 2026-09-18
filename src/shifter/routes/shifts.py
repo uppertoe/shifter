@@ -454,6 +454,8 @@ def pay_shift(
     paid_on: str = Form(...),
     paid_note: str = Form(""),
     include_expenses: int = Form(0),
+    expense_description: list[str] = Form([]),
+    expense_amount: list[str] = Form([]),
     next: str = Form(""),
     conn=Depends(get_db),
     user: str = Depends(current_user),
@@ -463,6 +465,12 @@ def pay_shift(
     can untick the checkbox to settle the shift on its own. An unchecked
     checkbox simply isn't submitted, hence the default of 0.
 
+    Expense lines typed into the pay form (expense_description /
+    expense_amount pairs, blank rows skipped) are created here and always
+    settled with this payment — the whole point of adding them at pay time
+    is that the receipt is in hand and being reimbursed now. The checkbox
+    only governs expenses that already existed on the shift.
+
     The optional ``next`` form field lets callers (e.g. /nannies/X/unpaid)
     return the user to their original page after the redirect."""
     shift = repos.get_shift(conn, shift_id)
@@ -470,19 +478,25 @@ def pay_shift(
         raise HTTPException(status.HTTP_404_NOT_FOUND)
     try:
         paid_date = date.fromisoformat(paid_on)
+        expense_lines = _expense_lines(expense_description, expense_amount)
     except ValueError as e:
         raise HTTPException(status.HTTP_400_BAD_REQUEST, str(e))
     repos.mark_shifts_paid(
         conn, [shift_id], paid_date,
         paid_note=paid_note.strip() or None, updated_by=user,
     )
+    to_pay: list[int] = []
     if include_expenses:
-        unpaid_expense_ids = [
+        to_pay += [
             e["id"] for e in repos.list_expenses(conn, shift_id)
             if e["paid_on"] is None
         ]
-        if unpaid_expense_ids:
-            repos.mark_expenses_paid(conn, unpaid_expense_ids, paid_date)
+    for desc, cents in expense_lines:
+        to_pay.append(
+            repos.create_expense(conn, shift_id=shift_id, amount_cents=cents, description=desc)
+        )
+    if to_pay:
+        repos.mark_expenses_paid(conn, to_pay, paid_date)
     return RedirectResponse(
         _safe_next(next, "/shifts"), status_code=status.HTTP_303_SEE_OTHER,
     )

@@ -41,7 +41,7 @@ from datetime import datetime, time, timedelta
 
 from shifter import repos, schedule
 from shifter.config import Settings
-from shifter.time_utils import ceil_15min
+from shifter.time_utils import ceil_15min, floor_15min
 
 
 @dataclass
@@ -205,12 +205,12 @@ def _rounded_arrival_start(
     expected_shift_id: int | None,
     nanny_id: int | None = None,
 ) -> datetime:
-    """Round arrival time UP to the nearest 15 min (07:58 → 08:00), but never
-    before the nanny's scheduled start for that day. Rounding up matches how
-    late starts were being corrected by hand in prod (07:58 → 08:00,
-    08:29 → 08:30), and mirrors the departure rule which also rounds up. If
+    """Round arrival time DOWN to the nearest 15 min (08:07 → 08:00), but never
+    before the nanny's scheduled start for that day. The nanny is given the
+    benefit of the doubt on arrival (a few minutes walking from the car to
+    the keypad), and the departure rule rounds UP for the same reason. If
     we have no expected_shift_id, fall back to looking up by (nanny_id, date)."""
-    rounded = ceil_15min(occurred_at)
+    rounded = floor_15min(occurred_at)
     expected = None
     if expected_shift_id is not None:
         expected = conn.execute(

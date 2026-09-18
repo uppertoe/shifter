@@ -93,23 +93,11 @@
       {% if s.confirmed and s.end_time and not s.paid_on %}
         <tr id="{{ pay_row_id }}" class="pay-row" hidden>
           <td colspan="7">
-            <form method="post" action="/shifts/{{ s.id }}/pay" class="pay-form">
-              <label>Paid on
-                <input type="date" name="paid_on" value="{{ today_iso }}" required>
-              </label>
-              {% if v.unpaid_expenses_count %}
-                <label class="inline-check">
-                  <input type="checkbox" name="include_expenses" value="1" checked>
-                  Also pay {{ v.unpaid_expenses_count }} expense{{ '' if v.unpaid_expenses_count == 1 else 's' }}
-                  ({{ format_cents(v.unpaid_expenses_total_cents) }})
-                </label>
-              {% endif %}
-              <div class="pay-form-actions">
-                <button type="submit">Confirm paid</button>
-                <button type="button" class="secondary outline"
-                        data-toggle-row="{{ pay_row_id }}">Cancel</button>
-              </div>
-            </form>
+            {% with shift_id=s.id, next=current_url,
+                    unpaid_expenses_count=v.unpaid_expenses_count,
+                    unpaid_expenses_total_cents=v.unpaid_expenses_total_cents %}
+              {% include "shifts/_pay_form.html" %}
+            {% endwith %}
           </td>
         </tr>
       {% endif %}

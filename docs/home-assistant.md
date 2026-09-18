@@ -257,9 +257,10 @@ so you can audit them with SQL — but no shift state changes.
 The preferred source of a shift's start time is the nanny's own arrival
 signal (a keypad `access_granted` within ±`PRE_SHIFT_WINDOW_MINUTES` of the
 scheduled start, see `ha_signals.py`). The shift opens at the arrival time
-rounded **up** to the next 15 min (07:58 → 08:00, same rule as departures),
-but never before the scheduled start — an early arrival is paid from the
-rostered time.
+rounded **down** to the previous 15 min (08:07 → 08:00; departures round
+**up**, so the nanny gets the benefit of the doubt at both ends), but never
+before the scheduled start — an early arrival is paid from the rostered
+time.
 
 The auto-opener is only a **fallback** for the days nobody used the keypad
 (let in by a homeowner, door already open, ...). It waits until the arrival

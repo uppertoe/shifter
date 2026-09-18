@@ -39,24 +39,11 @@
           </tr>
           <tr id="{{ pay_row_id }}" class="pay-row" hidden>
             <td colspan="5">
-              <form method="post" action="/shifts/{{ s.shift_id }}/pay" class="pay-form">
-                <input type="hidden" name="next" value="/nannies/{{ nanny.id }}/unpaid">
-                <label>Paid on
-                  <input type="date" name="paid_on" value="{{ today_iso }}" required>
-                </label>
-                {% if shift_exps %}
-                  <label class="inline-check">
-                    <input type="checkbox" name="include_expenses" value="1" checked>
-                    Also pay {{ shift_exps|length }} expense{{ '' if shift_exps|length == 1 else 's' }}
-                    ({{ format_cents(shift_exps_total) }})
-                  </label>
-                {% endif %}
-                <div class="pay-form-actions">
-                  <button type="submit">Confirm paid</button>
-                  <button type="button" class="secondary outline"
-                          data-toggle-row="{{ pay_row_id }}">Cancel</button>
-                </div>
-              </form>
+              {% with shift_id=s.shift_id, next='/nannies/' ~ nanny.id ~ '/unpaid',
+                      unpaid_expenses_count=shift_exps|length,
+                      unpaid_expenses_total_cents=shift_exps_total %}
+                {% include "shifts/_pay_form.html" %}
+              {% endwith %}
             </td>
           </tr>
         {% endfor %}

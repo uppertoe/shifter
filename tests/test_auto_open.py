@@ -117,7 +117,7 @@ def test_auto_open_due_at_caps_grace_at_half_slot(conn):
 
 def test_late_ha_arrival_sets_real_start_and_auto_opener_defers(conn):
     """The whole point of the grace period: a 07:58 keypad arrival on a 07:00
-    slot opens the shift at 08:00 (actual time rounded up), and the auto-opener
+    slot opens the shift at 07:45 (actual time rounded down), and the auto-opener
     then has nothing to do — previously it had already pinned 07:00 and the
     human had to edit every late arrival by hand."""
     from shifter import ha_signals
@@ -143,7 +143,7 @@ def test_late_ha_arrival_sets_real_start_and_auto_opener_defers(conn):
     assert res.resolution == "arrival"
     shift = conn.execute("SELECT * FROM shifts WHERE id = ?", (res.shift_id,)).fetchone()
     assert datetime.fromisoformat(shift["start_time"]) == \
-        datetime(2026, 5, 12, 8, 0, tzinfo=MEL)
+        datetime(2026, 5, 12, 7, 45, tzinfo=MEL)
     assert shift["source"] == "ha"
     # Window closes at 08:30 — the slot is already covered, so no second shift.
     assert schedule.auto_open_due(
